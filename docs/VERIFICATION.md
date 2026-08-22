@@ -87,7 +87,7 @@ environment with no pre-existing CCT entry point:
 Receipt:
 
 ```text
-DIRECTORY_SHIM_PASS registrations=15-tools,2-hooks source=user version=0.7.0
+DIRECTORY_SHIM_PASS registrations=15-tools,2-hooks source=git version=0.7.0
 ```
 
 ## Distribution build
