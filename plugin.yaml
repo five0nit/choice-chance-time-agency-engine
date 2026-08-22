@@ -1,7 +1,5 @@
 name: cct-agency
 version: 0.7.0
-manifest_version: 2
-api_version: 1
 description: Choice-Chance-Time Agency Engine tools for verifiable, progressively earned autonomy.
 author: Michael Costea
 license: MIT
