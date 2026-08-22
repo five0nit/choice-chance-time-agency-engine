@@ -29,7 +29,7 @@ jobs:
           python -m pip install -e .
           python -m pip install pytest ruff build
       - name: Lint
-        run: ruff check cct_agent hermes_plugin scripts tests
+        run: ruff check __init__.py cct_agent hermes_plugin scripts tests
       - name: Test
         run: python -m pytest -v --tb=short
       - name: Compile

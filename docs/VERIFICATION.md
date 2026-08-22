@@ -21,7 +21,7 @@ Result:
 
 ```text
 collected 141 items
-141 passed in 19.38s
+141 passed in 20.19s
 ```
 
 Coverage families:
@@ -67,6 +67,29 @@ Plugin Doctor: <repository>
 
 Doctor uses Hermes' real manifest parser, directory discovery, import path, plugin context, hook registry, and tool registry.
 
+## Hermes installation behavior
+
+The standard `hermes plugins install` community path was tested against Hermes
+0.20.5. It correctly blocked the repository with a dangerous verdict because
+static scanning treats intentional credential denylist strings and inert
+prompt-injection regression fixtures as active risk. `--force` cannot override
+that verdict. The public README does not recommend disabling scanning.
+
+The documented reviewed-source path was then tested in a clean Hermes 0.20.5
+environment with no pre-existing CCT entry point:
+
+- exact release checkout placed under `$HERMES_HOME/plugins/cct-agency`;
+- Plugin Doctor passed;
+- directory discovery registered 15 tools and 2 hooks;
+- plugin enabled as user source at version `0.7.0`;
+- built-in tool-override capability remained denied.
+
+Receipt:
+
+```text
+DIRECTORY_SHIM_PASS registrations=15-tools,2-hooks source=user version=0.7.0
+```
+
 ## Distribution build
 
 Command:
@@ -85,7 +108,7 @@ dist/cct_agency_engine-0.7.0.tar.gz
 Wheel SHA-256:
 
 ```text
-c0c5d56bec9ede7feab46151cc63c88cd4aa20392072878a2ef106d94adcb2ec  cct_agency_engine-0.7.0-py3-none-any.whl
+878a3e15bf50294df6632f2e17e38d733679a9eff4cdf2b58012b5ec7655cf8b  cct_agency_engine-0.7.0-py3-none-any.whl
 ```
 
 The wheel hash identifies the locally verified release-candidate artifact. The

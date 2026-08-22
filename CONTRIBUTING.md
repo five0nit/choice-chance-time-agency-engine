@@ -16,7 +16,7 @@ python -m pip install pytest ruff build
 ## Required checks
 
 ```bash
-ruff check cct_agent hermes_plugin scripts tests
+ruff check __init__.py cct_agent hermes_plugin scripts tests
 python -m pytest -v --tb=short
 python -m compileall -q cct_agent hermes_plugin scripts tests
 python scripts/public_release_check.py

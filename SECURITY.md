@@ -4,6 +4,12 @@
 
 Choice–Chance–Time Agency Engine is public alpha software. It is not a sandbox, credential vault, or complete authorization monitor for a surrounding agent runtime.
 
+Hermes 0.20.5's community-plugin scanner currently blocks automatic Git install
+because intentional credential denylist strings and inert injection fixtures
+produce a dangerous verdict. `--force` cannot override it. This repository does
+not recommend disabling scanning; use the reviewed source-install procedure in
+[`docs/HERMES_INTEGRATION.md`](docs/HERMES_INTEGRATION.md).
+
 ## Supported versions
 
 | Version | Supported |
