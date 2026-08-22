@@ -45,11 +45,18 @@ FORBIDDEN_TRACKED_PARTS = {
     "state",
     "venv",
 }
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def git_paths(*arguments: str) -> list[Path]:
-    raw = subprocess.check_output(["git", "ls-files", "-z", *arguments])
-    return [Path(item.decode("utf-8")) for item in raw.split(b"\0") if item]
+    raw = subprocess.check_output(
+        ["git", "-C", str(REPO_ROOT), "ls-files", "-z", *arguments]
+    )
+    return [
+        REPO_ROOT / item.decode("utf-8")
+        for item in raw.split(b"\0")
+        if item
+    ]
 
 
 def candidate_files() -> list[Path]:
@@ -66,8 +73,9 @@ def main() -> int:
     files = candidate_files()
 
     for path in files:
+        display_path = path.relative_to(REPO_ROOT)
         if set(path.parts) & FORBIDDEN_TRACKED_PARTS:
-            errors.append(f"forbidden generated/runtime path: {path}")
+            errors.append(f"forbidden generated/runtime path: {display_path}")
         if path.suffix.lower() not in TEXT_SUFFIXES:
             continue
         try:
@@ -76,10 +84,12 @@ def main() -> int:
             continue
         for line_number, line in enumerate(text.splitlines(), 1):
             if PRIVATE_PATH.search(line):
-                errors.append(f"absolute private path: {path}:{line_number}")
+                errors.append(
+                    f"absolute private path: {display_path}:{line_number}"
+                )
             for label, pattern in SECRET_PATTERNS.items():
                 if pattern.search(line):
-                    errors.append(f"{label}: {path}:{line_number}")
+                    errors.append(f"{label}: {display_path}:{line_number}")
         if path.suffix.lower() != ".md":
             continue
         for target in MARKDOWN_LINK.findall(text):
@@ -87,7 +97,7 @@ def main() -> int:
                 continue
             relative = target.split("#", 1)[0]
             if relative and not (path.parent / relative).resolve().exists():
-                errors.append(f"broken local link: {path} -> {target}")
+                errors.append(f"broken local link: {display_path} -> {target}")
 
     if errors:
         print("\n".join(errors))
