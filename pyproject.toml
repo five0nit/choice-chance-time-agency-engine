@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cct-agency-engine"
+version = "0.7.0"
+description = "Choice-Chance-Time Agency Engine for verifiable autonomy that earns authority through proof"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{name = "Michael Costea"}]
+dependencies = []
+keywords = [
+  "ai-agents",
+  "agent-governance",
+  "autonomy",
+  "event-sourcing",
+  "hermes-agent",
+  "replayability",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.scripts]
+cct-agent = "cct_agent.cli:main"
+cct-engine = "cct_agent.cli:main"
+
+[project.entry-points."hermes_agent.plugins"]
+cct-agency = "hermes_plugin"
+
+[project.urls]
+Homepage = "https://github.com/five0nit/choice-chance-time-agency-engine"
+Repository = "https://github.com/five0nit/choice-chance-time-agency-engine"
+Issues = "https://github.com/five0nit/choice-chance-time-agency-engine/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cct_agent*", "hermes_plugin*"]
+
+[tool.setuptools.package-data]
+hermes_plugin = ["plugin.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

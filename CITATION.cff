@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use this software in research, please cite it using this metadata."
+title: "Choice–Chance–Time Agency Engine"
+type: software
+authors:
+  - family-names: Costea
+    given-names: Michael
+version: 0.7.0
+date-released: 2026-08-23
+url: "https://github.com/five0nit/choice-chance-time-agency-engine"
+repository-code: "https://github.com/five0nit/choice-chance-time-agency-engine"
+license: MIT
+abstract: >-
+  A dependency-free Python architecture for persistent, replayable,
+  reasons-responsive AI agency with bounded exploration, temporal evidence,
+  proactive initiative, trusted sensors, reversible verified local execution,
+  and progressively earned authority.
+keywords:
+  - ai agents
+  - agent governance
+  - operational agency
+  - event sourcing
+  - autonomy
+  - replayability
