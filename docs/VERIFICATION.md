@@ -105,16 +105,10 @@ dist/cct_agency_engine-0.7.0-py3-none-any.whl
 dist/cct_agency_engine-0.7.0.tar.gz
 ```
 
-Wheel SHA-256:
-
-```text
-878a3e15bf50294df6632f2e17e38d733679a9eff4cdf2b58012b5ec7655cf8b  cct_agency_engine-0.7.0-py3-none-any.whl
-```
-
-The wheel hash identifies the locally verified release-candidate artifact. The
-source distribution includes this verification document, so its final checksum
-is published alongside the immutable GitHub Release asset rather than embedded
-recursively here. Source publication does not imply PyPI publication.
+Final artifact checksums are published in `SHA256SUMS.txt` on the immutable
+GitHub Release. Keeping checksums beside the assets avoids embedding a recursive
+source-distribution checksum in this document. Source publication does not imply
+PyPI publication.
 
 Wheel inspection confirmed `hermes_plugin/plugin.yaml` and the complete
 `cct_agent` package. Source-distribution inspection confirmed the public README,
