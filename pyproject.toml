@@ -45,6 +45,12 @@ include = ["cct_agent*", "hermes_plugin*"]
 [tool.setuptools.package-data]
 hermes_plugin = ["plugin.yaml"]
 
+[tool.ruff]
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
