@@ -394,7 +394,13 @@ def test_concurrent_verifier_requests_execute_one_process_only(tmp_path: Path) -
         assert worker.exitcode == 0
     results = [queue.get(timeout=2) for _ in workers]
 
-    assert results.count("EXECUTED") == 1
+    # The process that wins the command-effect claim need not also win the
+    # outer verification claim. In that valid interleaving it reports REPLAY
+    # even though the durable receipts prove one execution. Result labels are
+    # therefore advisory; the effect and append-once receipts below are the
+    # exactly-once assertions.
+    assert results.count("EXECUTED") <= 1
+    assert any(result in {"EXECUTED", "REPLAY"} for result in results)
     assert set(results) <= {
         "EXECUTED",
         "REPLAY",
