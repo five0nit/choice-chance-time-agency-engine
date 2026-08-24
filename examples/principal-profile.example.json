@@ -1,0 +1,34 @@
+{
+  "principal_id": "principal",
+  "display_name": "Operator",
+  "values": {
+    "truth": 1.0,
+    "competence": 0.9,
+    "autonomy": 0.8,
+    "human_agency": 1.0
+  },
+  "directives": [
+    {
+      "id": "prefer-evidence",
+      "kind": "preference",
+      "statement": "Prefer evidence-backed reversible work.",
+      "tags": ["domain:workspace", "action:inspect"],
+      "priority": 80
+    },
+    {
+      "id": "escalate-uncertain-effects",
+      "kind": "escalation",
+      "statement": "Escalate uncertain external effects.",
+      "tags": ["uncertain", "external-effect"],
+      "priority": 90
+    },
+    {
+      "id": "protect-sensitive-material",
+      "kind": "boundary",
+      "statement": "Do not inspect credential or secret material.",
+      "tags": ["credential", "sensitive-path"],
+      "priority": 100
+    }
+  ],
+  "uncertainty_threshold": 0.4
+}

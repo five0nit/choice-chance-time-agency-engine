@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cct-agency-engine"
-version = "0.7.0"
+version = "0.9.0a7"
 description = "Choice-Chance-Time Agency Engine for verifiable autonomy that earns authority through proof"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -29,6 +29,7 @@ classifiers = [
 [project.scripts]
 cct-agent = "cct_agent.cli:main"
 cct-engine = "cct_agent.cli:main"
+cct-recurrent = "cct_agent.recurrent:main"
 
 [project.entry-points."hermes_agent.plugins"]
 cct-agency = "hermes_plugin"

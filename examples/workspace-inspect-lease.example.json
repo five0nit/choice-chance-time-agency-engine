@@ -1,0 +1,12 @@
+{
+  "id": "lease-workspace-inspect",
+  "capability": "workspace.inspect",
+  "principal_id": "principal",
+  "scopes": ["docs/**"],
+  "expires_at": "2099-01-01T00:00:00+00:00",
+  "max_actions": 2,
+  "max_bytes": 16384,
+  "max_value_microunits": 0,
+  "issued_by": "operator",
+  "evidence": ["operator://reviewed-inspection-lease"]
+}

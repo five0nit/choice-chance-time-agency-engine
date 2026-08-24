@@ -116,7 +116,7 @@ Do not copy a live SQLite file while its process is writing unless using SQLite-
 
 Default: `CCT-Agent`.
 
-The identity becomes part of the constitution fingerprint when a new store is initialized. Changing identity against an existing database fails closed as a constitution mismatch. Use a new state directory or an explicit future migration/endorsement path; do not edit the database.
+The identity becomes part of the constitution fingerprint when a store is initialized. Root creation uses one SQLite logical-key transaction so concurrent processes converge on one canonical constitution even when trusted metadata predates kernel initialization. An existing store rehydrates its one exact initialized constitution only after hash-chain, payload-fingerprint, schema, configured-identity, and exact numeric-representation checks pass. Changing identity against an existing database still fails closed. Use a new state directory or an explicit future migration/endorsement path; do not edit the database.
 
 ### `team_sync_source`
 
@@ -130,6 +130,29 @@ When unset:
 
 When set, source validation includes regular-file, ownership, permission, link-count, descriptor-identity, and trusted-root checks. Producer prose is not copied into trusted cognition.
 
+### `inspection_root` — development `0.8.0a1`
+
+Optional absolute root for the separately leased `cct_workspace_inspect` tool.
+
+Configuration alone grants nothing. The same CCT event store must also contain:
+
+- an externally installed principal profile;
+- a host-registered `workspace.inspect` capability specification;
+- an active matching capability lease.
+
+New tools:
+
+- `cct_principal_status`;
+- `cct_principal_evaluate`;
+- `cct_principal_propose`;
+- `cct_capability_status`;
+- `cct_capability_evaluate`;
+- `cct_workspace_inspect`.
+
+Use the local CLI for operator-only profile installation, specification
+registration, lease grant, and revocation. These mutations are deliberately not
+model-callable.
+
 Standalone scripts also support environment configuration:
 
 ```bash
@@ -142,7 +165,7 @@ For Hermes itself, prefer `hermes config set plugins.entries...settings...` for 
 
 ## Tools
 
-The plugin registers fifteen tools:
+Public `0.7.0` registers fifteen tools. Development `0.9.0a3` registers twenty-one:
 
 ### Status and cognition
 
@@ -165,13 +188,26 @@ The plugin registers fifteen tools:
 - `cct_proactive_think`
 - `cct_observe`
 
+### Principal and typed capabilities — development
+
+- `cct_principal_status`
+- `cct_principal_evaluate`
+- `cct_principal_propose`
+- `cct_capability_status`
+- `cct_capability_evaluate`
+- `cct_workspace_inspect`
+
 ### Local autonomy
 
 - `cct_autonomy_status`
 - `cct_opportunity_propose`
 - `cct_autonomy_run`
 
-Model-created opportunities receive `self` authority and no executable plan. The model-callable tools cannot register host-authorized effects.
+Model-created opportunities receive `self` authority and no executable plan.
+They must link one active CCT goal and provide evidence. No model-callable tool
+may assert operator opportunity feedback. Operator/host CLI feedback remains
+available and cannot grant execution authority. Model-callable tools cannot
+register host-authorized effects, install principal profiles, or issue leases.
 
 ## Hooks
 
@@ -196,6 +232,10 @@ HERMES_HOME="$HOME/.hermes" python scripts/cct_proactive_tick.py
 ```
 
 Empty stdout means no message should be delivered.
+
+Development `0.9.0a3` checks persistent principal-aligned task opportunities
+before generic topic updates. Both lanes share the same cooldown, daily cap,
+semantic dedupe, and atomic emission claim.
 
 ### Team-sync sensor tick
 

@@ -10,6 +10,35 @@ produce a dangerous verdict. `--force` cannot override it. This repository does
 not recommend disabling scanning; use the reviewed source-install procedure in
 [`docs/HERMES_INTEGRATION.md`](docs/HERMES_INTEGRATION.md).
 
+Development version `0.8.0a1` adds a principal covenant and typed capability
+leases. A principal-alignment `allow` result is never effect authority. A
+capability lease is never proof of user alignment. Real execution requires both.
+
+The model-callable surface cannot install principal profiles, register
+capability specifications, issue leases, revoke leases, or endorse its own
+principal revisions. These remain operator/host CLI or Python API operations.
+
+Bounded inspection blocks sensitive path classes, traversal, symlinks,
+non-regular targets, multiply linked files, invalid UTF-8, and byte overruns.
+The event ledger records hashes and metadata, not inspected content. Returned
+text is labelled untrusted, never receives instruction authority, and carries
+deterministic taint flags for common prompt-override and extraction language.
+
+Development version `0.9.0a3` includes operator-visible opportunity cards. Self
+proposal prose remains `self_generated_untrusted_proposal`; presentation uses
+bounded normalized text and an explicit untrusted-content notice. A card and its
+`INTERESTED` receipt cannot grant effect authority, create or consume a lease,
+attach a plan, change opportunity execution status, or start an autonomy run.
+Terminal feedback is race-safe; snooze creates a new state token rather than a
+duplicate-suppression bypass.
+
+Path traversal begins only after principal and capability admission, preventing
+unauthorized path-existence oracles. The approved root is held as a pinned open
+directory descriptor, so replacing the configured pathname cannot redirect an
+inspection into a replacement tree. Every effect consumes one reservation
+atomically; outstanding reservations are invalidated by lease revocation,
+expiry, profile change, principal mismatch, or intent/capability mismatch.
+
 ## Supported versions
 
 | Version | Supported |

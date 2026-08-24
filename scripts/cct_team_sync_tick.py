@@ -17,10 +17,11 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from cct_agent import (  # noqa: E402
+    AgencyKernel,
     EventStore,
     TeamSyncSensor,
     TeamSyncSensorPolicy,
-    default_constitution,
+    resolve_constitution,
 )
 
 def _configured_source() -> Path | None:
@@ -96,9 +97,14 @@ def main(argv: list[str] | None = None) -> int:
         except BlockingIOError:
             return 0
         policy = TeamSyncSensorPolicy(projects=_projects(config_path))
+        store = EventStore(database)
+        constitution = resolve_constitution(
+            store, os.environ.get("CCT_IDENTITY", "CCT-Agent")
+        )
+        AgencyKernel(store, constitution).initialize()
         sensor = TeamSyncSensor(
-            EventStore(database),
-            default_constitution(os.environ.get("CCT_IDENTITY", "CCT-Agent")),
+            store,
+            constitution,
             source,
             policy=policy,
             trusted_root=source.parent,

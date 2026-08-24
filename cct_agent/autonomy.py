@@ -158,6 +158,7 @@ class Opportunity:
     uncertainty: float = 0.0
     time_cost: float = 0.0
     capability: str = "local_workspace_write"
+    goal_id: str | None = None
 
     def __post_init__(self) -> None:
         _identifier("opportunity id", self.id)
@@ -167,6 +168,8 @@ class Opportunity:
         _bounded_text("opportunity source", self.source, 200)
         _bounded_text("opportunity source_authority", self.source_authority, 80)
         _identifier("opportunity capability", self.capability)
+        if self.goal_id is not None:
+            _identifier("opportunity goal id", self.goal_id)
         _finite("opportunity information_gain", self.information_gain, low=0.0, high=1.0)
         _finite("opportunity uncertainty", self.uncertainty, low=0.0, high=1.0)
         _finite("opportunity time_cost", self.time_cost, low=0.0, high=10_000.0)
@@ -349,12 +352,19 @@ class AutonomyEngine:
             "source": opportunity.source,
             "source_authority": opportunity.source_authority,
             "executable": opportunity.executable,
+            "content_trust": (
+                "host_or_operator_metadata"
+                if opportunity.executable
+                else "self_generated_untrusted_proposal"
+            ),
+            "instructions_authorized": False,
             "value_impacts": {str(k): float(v) for k, v in opportunity.value_impacts.items()},
             "evidence": [str(item) for item in opportunity.evidence],
             "information_gain": float(opportunity.information_gain),
             "uncertainty": float(opportunity.uncertainty),
             "time_cost": float(opportunity.time_cost),
             "capability": opportunity.capability,
+            "goal_id": opportunity.goal_id,
             "plan_sha256": plan_digest,
             "plan_file": plan_path.name,
             "plan_content_in_event_ledger": False,
@@ -1963,7 +1973,7 @@ class AutonomyEngine:
         opportunities = self.opportunities()
         projected_opportunities = []
         for row in opportunities:
-            model_controlled = row["source_authority"] == "model"
+            model_controlled = row["source_authority"] not in _EXECUTABLE_AUTHORITIES
             projected_opportunities.append({
                 "opportunity_id": None if model_controlled else row["opportunity_id"],
                 "opportunity_id_sha256": _digest_bytes(
@@ -1981,7 +1991,7 @@ class AutonomyEngine:
                 "uncertainty": row["uncertainty"],
                 "time_cost": row["time_cost"],
                 "plan_sha256": row["plan_sha256"],
-                "plan_file": row["plan_file"],
+                "plan_file": None if model_controlled else row["plan_file"],
                 "title_sha256": _digest_bytes(str(row["title"]).encode("utf-8")),
                 "rationale_sha256": _digest_bytes(str(row["rationale"]).encode("utf-8")),
                 "objective_sha256": _digest_bytes(str(row["objective"]).encode("utf-8")),
@@ -1998,7 +2008,7 @@ class AutonomyEngine:
             {
                 str(row["capability"])
                 for row in opportunities
-                if row["source_authority"] != "model"
+                if row["source_authority"] in _EXECUTABLE_AUTHORITIES
             }
         )
         return {

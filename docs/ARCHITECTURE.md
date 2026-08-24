@@ -140,6 +140,52 @@ Detailed design: [`TRUSTED_SENSORS.md`](TRUSTED_SENSORS.md).
 
 Plans are hash-bound. Executable content lives in private state; the public event ledger stores plan digests, references, dependency metadata, claims, and receipts—not artifact bytes.
 
+### 7a. Principal covenant and capability leases — development `0.8.0a1`
+
+The personal-agency layer adds two independent admission decisions:
+
+1. **Principal alignment** — does a structured intent match the externally
+   installed operator profile?
+2. **Capability authority** — does a host-registered capability and active
+   external lease allow this principal, scope, expiry, action count, byte
+   budget, and value budget?
+
+The combined gate uses the strictest result. Either layer can deny. Either layer
+can require approval. Execution occurs only when both allow.
+
+Principal profiles and capability grants are not model-callable. The model may
+evaluate intent and propose profile revisions, but proposals cannot activate
+themselves.
+
+The first executor attached to this layer is bounded workspace inspection. It
+returns one authorized UTF-8 file while persisting only path, digest, size,
+inode identity, and authorization receipts.
+
+Detailed design: [`PERSONAL_AGENCY.md`](PERSONAL_AGENCY.md).
+
+### 7b. Opportunity initiative — development `0.9.0a3`
+
+`cct_agent/opportunity_initiative.py` projects open portfolio rows into
+principal-aligned conversational task cards. A zero-LLM scout first derives
+proposal-only candidates from uncovered active canonical goals. The engine then
+evaluates a low-risk `opportunity.review` intent, ranks deterministically, and
+submits through the same `ProactiveEngine` used by generic topics.
+
+Presentation identity binds the registration event, principal-profile digest,
+and latest feedback event. Cooldown and daily-cap failures do not consume that
+state. Permanent outcomes are append-once; concurrent scheduler processes
+converge through the shared atomic emission claim. Completion receipts include
+the policy version, ranked candidates, rejected alternatives, selected score,
+and portfolio digest.
+
+`INTERESTED`, `SKIP`, `SNOOZE`, `DONE`, and `BLOCKED` are communication/task
+receipts only. They do
+not modify source authority, opportunity execution status, capability leases,
+plans, or autonomy authority. Visible proposal text is normalized and labelled
+untrusted before scheduler delivery.
+
+Detailed design: [`OPPORTUNITY_INITIATIVE.md`](OPPORTUNITY_INITIATIVE.md).
+
 ### 8. Executor
 
 Version 0.7.0 exposes one autonomous effect:
@@ -225,6 +271,10 @@ Model output is untrusted proposal data. Model schemas cannot assign host author
 ### Host authority boundary
 
 Host adapter and authenticated operator sources may register executable typed plans. This is outside the model-callable surface.
+
+They may also install principal profiles, register capability specifications,
+issue or revoke leases, and configure inspection roots. Principal preferences
+alone cannot mint these host capabilities.
 
 ### Filesystem boundary
 

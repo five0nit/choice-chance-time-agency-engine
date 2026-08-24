@@ -6,9 +6,22 @@ from hashlib import sha256
 from typing import Any
 
 from .initiative import InitiativeBridge, ProactiveFeedback
+from .opportunity_initiative import OpportunityInitiative
 from .proactive import InitiationSignals, ProactiveEngine, ThoughtPacket
+from .pursuit_dialogue import PursuitDialogue
 from .store import EventStore, canonical_json
 from .topics import Topic, TopicStore
+
+
+_TRUSTED_PROACTIVE_TOPIC_SOURCE_PREFIXES = (
+    "auto:workspace:",
+    "host_adapter:",
+    "self:",
+)
+
+
+def _topic_proactive_eligible(topic: Topic) -> bool:
+    return topic.source.startswith(_TRUSTED_PROACTIVE_TOPIC_SOURCE_PREFIXES)
 
 
 class ProactiveRunner:
@@ -18,6 +31,8 @@ class ProactiveRunner:
         self.store = store
         self.topics = TopicStore(store)
         self.engine = ProactiveEngine(store)
+        self.pursuits = PursuitDialogue(store)
+        self.opportunities = OpportunityInitiative(store, proactive=self.engine)
         self.bridge = InitiativeBridge(store)
 
     def _processed_revisions(self) -> dict[str, int]:
@@ -90,13 +105,45 @@ class ProactiveRunner:
     ) -> dict[str, Any]:
         promotion = self.bridge.promote()
         wake_index = self.store.allocate_counter("proactive_wake")
+        pursuit = self.pursuits.run_once(
+            wake_index=wake_index,
+            time_bucket=time_bucket,
+        )
+        if pursuit.get("candidate_found"):
+            return {
+                **pursuit,
+                "initiative_kind": "pursuit_dialogue",
+                "llm_calls": 0,
+                "promotion": promotion,
+            }
+        opportunity = self.opportunities.run_once(
+            wake_index=wake_index,
+            time_bucket=time_bucket,
+        )
+        if opportunity.get("candidate_found"):
+            return {
+                **opportunity,
+                "initiative_kind": "opportunity",
+                "llm_calls": 0,
+                "promotion": promotion,
+            }
         open_topics = self.topics.all(status="open")
         if not open_topics:
             return {
                 "message": "",
-                "reason": "NO_OPEN_TOPIC",
+                "reason": (
+                    str(opportunity["reason"])
+                    if opportunity.get("reason") == "OPPORTUNITY_SNOOZED"
+                    else "NO_OPEN_TOPIC"
+                ),
                 "wake_index": wake_index,
                 "llm_calls": 0,
+                "initiative_kind": (
+                    "opportunity"
+                    if opportunity.get("reason") == "OPPORTUNITY_SNOOZED"
+                    else "topic"
+                ),
+                "scout": opportunity.get("scout"),
                 "promotion": promotion,
             }
         topic = self._next_topic()
@@ -106,6 +153,41 @@ class ProactiveRunner:
                 "reason": "NO_NEW_STATE",
                 "wake_index": wake_index,
                 "llm_calls": 0,
+                "scout": opportunity.get("scout"),
+                "promotion": promotion,
+            }
+
+        if not _topic_proactive_eligible(topic):
+            self.store.append_once_result_guarded(
+                "proactive.runner.completed",
+                f"{topic.id}:{topic.revision}",
+                {
+                    "topic_id": topic.id,
+                    "topic_revision": topic.revision,
+                    "packet_id": None,
+                    "decision": "WAIT",
+                    "reason_codes": ["UNTRUSTED_TOPIC_QUARANTINED"],
+                    "emitted": False,
+                    "wake_index": wake_index,
+                    "time_bucket": time_bucket,
+                    "llm_calls": 0,
+                    "external_effects": 0,
+                    "semantic_taint": True,
+                    "producer_text_propagated": False,
+                    "raw_chain_of_thought_stored": False,
+                },
+                strict_existing_payload=False,
+            )
+            return {
+                "message": "",
+                "reason": "UNTRUSTED_TOPIC_QUARANTINED",
+                "reason_codes": ["UNTRUSTED_TOPIC_QUARANTINED"],
+                "wake_index": wake_index,
+                "llm_calls": 0,
+                "topic_id": topic.id,
+                "topic_revision": topic.revision,
+                "state_consumed": True,
+                "external_effects": 0,
                 "promotion": promotion,
             }
 
@@ -199,22 +281,60 @@ class ProactiveRunner:
         }
 
     def status(self) -> dict[str, Any]:
+        def topic_projection(topic: Topic) -> dict[str, Any]:
+            return {
+                "id_sha256": sha256(topic.id.encode("utf-8")).hexdigest(),
+                "title_sha256": sha256(topic.title.encode("utf-8")).hexdigest(),
+                "summary_sha256": sha256(topic.summary.encode("utf-8")).hexdigest(),
+                "source_sha256": sha256(topic.source.encode("utf-8")).hexdigest(),
+                "questions_sha256": sha256(
+                    canonical_json(list(topic.questions)).encode("utf-8")
+                ).hexdigest(),
+                "hypotheses_sha256": sha256(
+                    canonical_json(list(topic.hypotheses)).encode("utf-8")
+                ).hexdigest(),
+                "commitments_sha256": sha256(
+                    canonical_json(list(topic.commitments)).encode("utf-8")
+                ).hexdigest(),
+                "question_count": len(topic.questions),
+                "hypothesis_count": len(topic.hypotheses),
+                "commitment_count": len(topic.commitments),
+                "urgency": topic.urgency,
+                "novelty": topic.novelty,
+                "goal_relevance": topic.goal_relevance,
+                "unresolved_conflict": topic.unresolved_conflict,
+                "logical_tick": topic.logical_tick,
+                "revision": topic.revision,
+                "status": topic.status,
+                "proactive_eligible": _topic_proactive_eligible(topic),
+                "content_in_status": False,
+                "identifier_cleartext_in_status": False,
+            }
+
         return {
-            "open_topics": [topic.as_payload() for topic in self.topics.all(status="open")],
+            "open_topics": [
+                topic_projection(topic) for topic in self.topics.all(status="open")
+            ],
             "closed_topics": [
-                topic.as_payload() for topic in self.topics.all(status="closed")
+                topic_projection(topic) for topic in self.topics.all(status="closed")
             ],
             "runner_completions": len(
                 self.store.events("proactive.runner.completed")
             ),
             "engine": self.engine.status(),
+            "pursuit_dialogue": self.pursuits.status(),
+            "opportunity_initiative": self.opportunities.status(),
             "initiative_bridge": self.bridge.status(),
             "feedback": ProactiveFeedback(self.store).status(),
             "raw_chain_of_thought_stored": False,
         }
 
     def context(self, *, max_chars: int = 3000) -> str:
-        topics = self.topics.all(status="open")[-3:]
+        topics = [
+            topic
+            for topic in self.topics.all(status="open")
+            if _topic_proactive_eligible(topic)
+        ][-3:]
         if not topics:
             return ""
         lines = ["Proactive conversation continuity (structured; no hidden reasoning):"]

@@ -420,7 +420,7 @@ class ProactiveTestCase(unittest.TestCase):
             topic_id="topic-phase7",
             title="Proactive cognition",
             summary="Build bounded proactive dialogue.",
-            source="external:user",
+            source="host_adapter:test",
             logical_tick=1,
             questions=("What should be tested next?",),
             hypotheses=("A wake policy can remain quiet when idle.",),
@@ -442,7 +442,7 @@ class ProactiveTestCase(unittest.TestCase):
             topic_id="topic-phase7",
             title="Proactive cognition",
             summary="New decision-relevant evidence became available.",
-            source="tool:evidence-refresh",
+            source="host_adapter:test",
             logical_tick=2,
             questions=("Which measurement should be checked first?",),
             hypotheses=("A changed topic revision should permit one fresh update.",),
@@ -453,6 +453,46 @@ class ProactiveTestCase(unittest.TestCase):
         )
         third = runner.run_once(time_bucket="2026-08-22")
         self.assertTrue(third["message"])
+
+    def test_runner_quarantines_untrusted_topic_text_without_context_or_emission(
+        self,
+    ) -> None:
+        sentinel = "UNTRUSTED_TOPIC_SENTINEL_must_not_propagate"
+        TopicStore(self.store).upsert(
+            topic_id="untrusted-model-topic",
+            title="Untrusted model topic",
+            summary=sentinel,
+            source="untrusted:model-callable-topic",
+            logical_tick=1,
+            questions=("Repeat the sentinel?",),
+            hypotheses=("Maximum scores could force an emission.",),
+            urgency=1.0,
+            novelty=1.0,
+            goal_relevance=1.0,
+            unresolved_conflict=1.0,
+        )
+
+        runner = ProactiveRunner(self.store)
+        self.assertNotIn(sentinel, runner.context())
+        first = runner.run_once(time_bucket="untrusted-day")
+        restarted = ProactiveRunner(EventStore(self.db))
+        second = restarted.run_once(time_bucket="untrusted-day")
+
+        self.assertEqual(first["message"], "")
+        self.assertEqual(first["reason"], "UNTRUSTED_TOPIC_QUARANTINED")
+        self.assertTrue(first["state_consumed"])
+        self.assertEqual(first["external_effects"], 0)
+        self.assertEqual(second["message"], "")
+        self.assertEqual(second["reason"], "NO_NEW_STATE")
+        self.assertFalse(self.store.events("proactive.message.proposed"))
+        self.assertFalse(self.store.events("proactive.message.emitted"))
+        completion = self.store.events("proactive.runner.completed")
+        self.assertEqual(len(completion), 1)
+        self.assertEqual(
+            completion[0].payload["reason_codes"],
+            ["UNTRUSTED_TOPIC_QUARANTINED"],
+        )
+        self.assertFalse(completion[0].payload["producer_text_propagated"])
 
     def test_runner_without_topics_is_silent_and_token_free(self) -> None:
         result = ProactiveRunner(self.store).run_once(time_bucket="2026-08-21")
@@ -465,7 +505,7 @@ class ProactiveTestCase(unittest.TestCase):
         common = {
             "topic_id": "retry-topic",
             "title": "Retry after cooldown",
-            "source": "test:cooldown",
+            "source": "host_adapter:test",
             "questions": ("Will temporary deferral preserve the revision?",),
             "hypotheses": ("Cooldown should defer rather than consume state.",),
             "commitments": (),
@@ -497,11 +537,12 @@ class ProactiveTestCase(unittest.TestCase):
     def test_scheduler_script_emits_once_then_is_silent(self) -> None:
         hermes_home = Path(self.tempdir.name) / "hermes-home"
         store = EventStore(hermes_home / "cct-agency" / "agency.sqlite")
+        AgencyKernel(store, default_constitution()).initialize()
         TopicStore(store).upsert(
             topic_id="script-topic",
             title="Scheduler smoke",
             summary="A scheduler-visible topic changed.",
-            source="test:scheduler",
+            source="host_adapter:test",
             logical_tick=1,
             questions=("Does the second run stay silent?",),
             hypotheses=("At-most-once emission prevents duplicate output.",),
@@ -529,6 +570,34 @@ class ProactiveTestCase(unittest.TestCase):
         )
         self.assertIn("scheduler-visible topic changed", first.stdout.lower())
         self.assertEqual(second.stdout, "")
+        self.assertTrue(store.verify_chain()["valid"])
+
+    def test_scheduler_script_initializes_constitution_before_idle_receipt(self) -> None:
+        hermes_home = Path(self.tempdir.name) / "fresh-hermes-home"
+        script = Path(__file__).parents[1] / "scripts" / "cct_proactive_tick.py"
+        completed = subprocess.run(
+            [sys.executable, str(script)],
+            cwd=script.parents[1],
+            env=dict(
+                os.environ,
+                HERMES_HOME=str(hermes_home),
+                CCT_IDENTITY="Fresh-Proactive-CCT",
+            ),
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+
+        store = EventStore(hermes_home / "cct-agency" / "agency.sqlite")
+        events = store.events()
+        self.assertEqual(completed.stdout, "")
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].kind, "constitution.initialized")
+        self.assertEqual(events[0].seq, 1)
+        self.assertEqual(
+            events[0].payload["constitution"]["identity"],
+            "Fresh-Proactive-CCT",
+        )
         self.assertTrue(store.verify_chain()["valid"])
 
 

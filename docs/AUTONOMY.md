@@ -32,7 +32,7 @@ CCT outcome → capability reliability → later portfolio choice
 - `operator` — executable when an authenticated host integration supplies it.
 - all other values, including model `self` proposals — persisted but blocked from execution.
 
-The Hermes `cct_opportunity_propose` tool intentionally creates `self` proposals with no executable plan. A host adapter must attach a typed plan through the Python API. `cct_autonomy_run` can only select plans that were already registered by `host_adapter` or `operator` authority.
+The Hermes `cct_opportunity_propose` tool intentionally creates `self` proposals with no executable plan. It requires one active CCT `goal_id` and evidence; the proactive lane suppresses ungrounded self proposals. A host adapter must attach a typed plan through the Python API. `cct_autonomy_run` can only select plans that were already registered by `host_adapter` or `operator` authority.
 
 ## Initial effect vocabulary
 

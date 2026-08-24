@@ -71,6 +71,17 @@ Not present:
 
 Prompt wording cannot create an effect kind that is absent from the executor's vocabulary.
 
+Development `0.8.0a1` adds one read effect through a separate personal-agency
+gate:
+
+```text
+read one bounded UTF-8 file beneath an approved inspection root
+```
+
+It requires an externally installed principal profile, a host-registered
+`workspace.inspect` specification, an active matching lease, and a combined
+allow decision. Inspection does not widen the create-only autonomy executor.
+
 ### 4. Spatial authority
 
 Every action path must be:
@@ -119,6 +130,30 @@ An executable plan must satisfy all of these:
 - plan digest matching the private stored plan.
 
 Executable artifact content remains under private mode-controlled state. Event projections expose hashes and bounded metadata, not content.
+
+### 6a. Principal and lease authority
+
+Principal directives describe what serves the operator. They do not grant an
+effect. Capability leases describe what the host permits. They do not prove
+operator alignment.
+
+```text
+principal allow + capability allow = eligible typed effect
+principal deny  + anything         = deny
+anything        + capability deny  = deny
+either requires approval           = require approval
+```
+
+Capability leases are externally issued, scoped, budgeted, expiring, and
+revocable. Lease scope and budgets may only narrow the registered capability.
+Unknown, missing, expired, revoked, mismatched, or over-budget authority fails
+closed.
+
+Reservations bind the active principal identity, principal-profile digest,
+canonical intent digest, intent domain/action, and capability specification.
+Executors must atomically consume the reservation immediately before an effect.
+Consumption is single-use and rechecks revocation, expiry, profile identity,
+intent binding, and scope.
 
 ### 7. Verification authority
 
@@ -186,6 +221,13 @@ Current defaults:
 - unchanged state: empty stdout.
 
 This is not arbitrary access to email, social media, Telegram, Discord, or another messaging API. External delivery remains a host responsibility.
+
+Development `0.9.0a3` allows persistent opportunities to compete for this same
+bounded scheduler message. Task-card `INTERESTED`, `SKIP`, `SNOOZE`, `DONE`,
+and `BLOCKED` receipts
+are communication-state decisions only. They cannot change opportunity source
+authority, attach an executable plan, register or lease a capability, spend a
+lease, execute an autonomy run, or promote the authority envelope.
 
 ## CCT authority versus Hermes authority
 

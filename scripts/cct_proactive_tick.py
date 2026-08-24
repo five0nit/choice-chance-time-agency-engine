@@ -13,7 +13,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from cct_agent import EventStore, ProactiveRunner  # noqa: E402
+from cct_agent import (  # noqa: E402
+    AgencyKernel,
+    EventStore,
+    ProactiveRunner,
+    resolve_constitution,
+)
 
 
 def main() -> int:
@@ -29,7 +34,12 @@ def main() -> int:
             fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return 0
-        result = ProactiveRunner(EventStore(database)).run_once(
+        store = EventStore(database)
+        constitution = resolve_constitution(
+            store, os.environ.get("CCT_IDENTITY", "CCT-Agent")
+        )
+        AgencyKernel(store, constitution).initialize()
+        result = ProactiveRunner(store).run_once(
             time_bucket=datetime.now(UTC).date().isoformat()
         )
         message = str(result.get("message", "")).strip()

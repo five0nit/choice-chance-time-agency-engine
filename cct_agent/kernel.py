@@ -15,6 +15,22 @@ from .store import Event, EventStore, canonical_json
 
 
 NO_OP_ID = "NO_OP"
+_CONSTITUTION_KIND = "constitution.initialized"
+_CONSTITUTION_LOGICAL_KEY = "root"
+
+_CONSTITUTION_FIELDS = frozenset(
+    {
+        "identity",
+        "values",
+        "constraints",
+        "risk_aversion",
+        "time_discount",
+        "exploration_rate",
+        "temperature",
+        "epistemic_bonus",
+        "irreversibility_penalty",
+    }
+)
 
 
 def canonical_no_op() -> Option:
@@ -73,6 +89,121 @@ def default_constitution(identity: str = "CCT-Agent") -> Constitution:
     )
 
 
+def _constitution_payload(constitution: Constitution) -> dict[str, Any]:
+    return {
+        "identity": constitution.identity,
+        "values": [asdict(value) for value in constitution.values],
+        "constraints": list(constitution.constraints),
+        "risk_aversion": constitution.risk_aversion,
+        "time_discount": constitution.time_discount,
+        "exploration_rate": constitution.exploration_rate,
+        "temperature": constitution.temperature,
+        "epistemic_bonus": constitution.epistemic_bonus,
+        "irreversibility_penalty": constitution.irreversibility_penalty,
+    }
+
+
+def _stored_constitution(payload: object) -> Constitution:
+    """Strictly reconstruct one constitution committed to the event ledger."""
+
+    if not isinstance(payload, dict) or set(payload) != _CONSTITUTION_FIELDS:
+        raise ValueError("stored constitution has an invalid field set")
+
+    identity = payload.get("identity")
+    raw_values = payload.get("values")
+    raw_constraints = payload.get("constraints")
+    if not isinstance(identity, str):
+        raise ValueError("stored constitution identity must be a string")
+    if not isinstance(raw_values, list) or not raw_values:
+        raise ValueError("stored constitution values must be a non-empty array")
+    if not isinstance(raw_constraints, list) or not raw_constraints or any(
+        not isinstance(item, str) for item in raw_constraints
+    ):
+        raise ValueError(
+            "stored constitution constraints must be a non-empty string array"
+        )
+
+    values: list[Value] = []
+    for row in raw_values:
+        if not isinstance(row, dict) or set(row) != {
+            "name",
+            "weight",
+            "description",
+        }:
+            raise ValueError("stored constitution value has an invalid field set")
+        name = row.get("name")
+        description = row.get("description")
+        weight = row.get("weight")
+        if not isinstance(name, str) or not isinstance(description, str):
+            raise ValueError("stored constitution value text must be strings")
+        if isinstance(weight, bool) or not isinstance(weight, (int, float)):
+            raise ValueError("stored constitution value weight must be numeric")
+        values.append(Value(name=name, weight=weight, description=description))
+
+    numeric: dict[str, int | float] = {}
+    for name in _CONSTITUTION_FIELDS - {"identity", "values", "constraints"}:
+        value = payload.get(name)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"stored constitution {name} must be numeric")
+        numeric[name] = value
+
+    return Constitution(
+        identity=identity,
+        values=tuple(values),
+        constraints=tuple(raw_constraints),
+        risk_aversion=numeric["risk_aversion"],
+        time_discount=numeric["time_discount"],
+        exploration_rate=numeric["exploration_rate"],
+        temperature=numeric["temperature"],
+        epistemic_bonus=numeric["epistemic_bonus"],
+        irreversibility_penalty=numeric["irreversibility_penalty"],
+    )
+
+
+def resolve_constitution(
+    store: EventStore, identity: str = "CCT-Agent"
+) -> Constitution:
+    """Use the configured default for a new store or its exact committed root.
+
+    Public defaults may become less profile-specific between releases. Existing stores
+    must continue from their original constitution rather than silently amending it or
+    becoming unusable. Rehydration therefore requires one valid hash-chained genesis
+    event, a self-consistent constitution fingerprint, and an exact configured identity.
+    """
+
+    initialized = store.events(_CONSTITUTION_KIND)
+    if not initialized:
+        return default_constitution(identity)
+    if len(initialized) != 1:
+        raise ValueError("store must contain exactly one initialized constitution")
+    event = initialized[0]
+
+    verification = store.verify_chain()
+    if not verification.get("valid"):
+        raise ValueError("cannot restore constitution from an invalid event chain")
+
+    raw_constitution = event.payload.get("constitution")
+    if not isinstance(raw_constitution, dict):
+        raise ValueError("stored constitution payload is missing")
+    fingerprint = sha256(
+        canonical_json(raw_constitution).encode("utf-8")
+    ).hexdigest()
+    if event.payload.get("fingerprint") != fingerprint:
+        raise ValueError("stored constitution fingerprint is invalid")
+
+    constitution = _stored_constitution(raw_constitution)
+    if constitution.identity != identity:
+        raise ValueError(
+            "configured identity does not match the stored constitution identity"
+        )
+    restored_fingerprint = sha256(
+        canonical_json(_constitution_payload(constitution)).encode("utf-8")
+    ).hexdigest()
+    if restored_fingerprint != fingerprint:
+        raise ValueError("stored constitution cannot be reconstructed exactly")
+    return constitution
+
+
 class AgencyKernel:
     """Governance kernel around a proposal-generating language model.
 
@@ -86,41 +217,60 @@ class AgencyKernel:
         self.constitution = constitution or default_constitution()
 
     def constitution_payload(self) -> dict[str, Any]:
-        return {
-            "identity": self.constitution.identity,
-            "values": [asdict(value) for value in self.constitution.values],
-            "constraints": list(self.constitution.constraints),
-            "risk_aversion": self.constitution.risk_aversion,
-            "time_discount": self.constitution.time_discount,
-            "exploration_rate": self.constitution.exploration_rate,
-            "temperature": self.constitution.temperature,
-            "epistemic_bonus": self.constitution.epistemic_bonus,
-            "irreversibility_penalty": self.constitution.irreversibility_penalty,
-        }
+        return _constitution_payload(self.constitution)
 
     def constitution_fingerprint(self) -> str:
         return sha256(canonical_json(self.constitution_payload()).encode("utf-8")).hexdigest()
 
     def initialize(self) -> Event:
-        existing = self.store.latest("constitution.initialized")
+        initialized = self.store.events(_CONSTITUTION_KIND)
+        if len(initialized) > 1:
+            raise ValueError("store contains multiple initialized constitutions")
         fingerprint = self.constitution_fingerprint()
-        if existing:
+        if initialized:
+            existing = initialized[0]
             if existing.payload.get("fingerprint") != fingerprint:
                 raise ValueError(
                     "store already belongs to a different constitution; propose an amendment instead"
                 )
             return existing
-        return self.store.append(
-            "constitution.initialized",
-            {
-                "constitution": self.constitution_payload(),
-                "fingerprint": fingerprint,
-                "operational_claim": (
-                    "bounded reasons-responsive agency; not evidence of consciousness "
-                    "or metaphysical free will"
-                ),
-            },
+
+        payload = {
+            "constitution": self.constitution_payload(),
+            "fingerprint": fingerprint,
+            "operational_claim": (
+                "bounded reasons-responsive agency; not evidence of consciousness "
+                "or metaphysical free will"
+            ),
+        }
+        event, _created, rejection = self.store.append_once_result_guarded(
+            _CONSTITUTION_KIND,
+            _CONSTITUTION_LOGICAL_KEY,
+            payload,
+            guard=lambda events: (
+                "CONSTITUTION_ALREADY_INITIALIZED"
+                if any(event.kind == _CONSTITUTION_KIND for event in events)
+                else None
+            ),
+            strict_existing_payload=False,
         )
+        if rejection is not None or event is None:
+            # A legacy initializer may have committed between the read above and
+            # this transaction without creating the logical-key row. Adopt only
+            # one exact genesis event; never append a competing root.
+            concurrent = self.store.events(_CONSTITUTION_KIND)
+            if len(concurrent) == 1:
+                candidate = concurrent[0]
+                if candidate.payload.get("fingerprint") == fingerprint:
+                    return candidate
+            raise ValueError("constitution initialization conflict")
+        if event.kind != _CONSTITUTION_KIND:
+            raise ValueError("constitution initialization returned the wrong event kind")
+        if event.payload.get("fingerprint") != fingerprint:
+            raise ValueError(
+                "store already belongs to a different constitution; propose an amendment instead"
+            )
+        return event
 
     def form_goal(
         self,

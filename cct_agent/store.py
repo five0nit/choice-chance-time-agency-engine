@@ -287,6 +287,112 @@ class EventStore:
 
         return self.append_once_result(kind, logical_key, payload)[0]
 
+    def append_once_computed(
+        self,
+        kind: str,
+        logical_key: str,
+        factory: Callable[[list[Event]], Mapping[str, Any]],
+    ) -> tuple[Event, bool]:
+        """Atomically derive and append one event from the current event sequence.
+
+        The factory runs while an IMMEDIATE SQLite transaction holds the writer
+        lock. This supports cumulative budgets and other admission decisions
+        that must not race with concurrent requests.
+        """
+
+        if not kind.strip() or not logical_key.strip():
+            raise ValueError("event kind and logical key must not be empty")
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = connection.execute(
+                """
+                SELECT e.* FROM logical_keys k
+                JOIN events e ON e.event_id = k.event_id
+                WHERE k.namespace = ? AND k.logical_key = ?
+                """,
+                (kind, logical_key),
+            ).fetchone()
+            if existing is not None:
+                connection.commit()
+                return self._row_to_event(existing), False
+            rows = connection.execute("SELECT * FROM events ORDER BY seq").fetchall()
+            payload = dict(factory([self._row_to_event(row) for row in rows]))
+            canonical_json(payload)
+            event = self._append_locked(
+                connection,
+                kind,
+                payload,
+                occurred=self.clock(),
+                identifier=self.id_factory(),
+            )
+            connection.execute(
+                "INSERT INTO logical_keys(namespace, logical_key, event_id) VALUES (?, ?, ?)",
+                (kind, logical_key, event.event_id),
+            )
+            connection.commit()
+            return event, True
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
+    def append_computed_once(
+        self,
+        kind: str,
+        factory: Callable[[list[Event]], tuple[str, Mapping[str, Any]]],
+    ) -> tuple[Event, bool]:
+        """Atomically derive both logical key and payload from current events."""
+
+        if not kind.strip():
+            raise ValueError("event kind must not be empty")
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            rows = connection.execute("SELECT * FROM events ORDER BY seq").fetchall()
+            logical_key, raw_payload = factory(
+                [self._row_to_event(row) for row in rows]
+            )
+            if not logical_key.strip():
+                raise ValueError("computed logical key must not be empty")
+            payload = dict(raw_payload)
+            payload_text = canonical_json(payload)
+            existing = connection.execute(
+                """
+                SELECT e.* FROM logical_keys k
+                JOIN events e ON e.event_id = k.event_id
+                WHERE k.namespace = ? AND k.logical_key = ?
+                """,
+                (kind, logical_key),
+            ).fetchone()
+            if existing is not None:
+                event = self._row_to_event(existing)
+                if canonical_json(event.payload) != payload_text:
+                    raise ValueError(
+                        f"logical key collision for {kind}:{logical_key}"
+                    )
+                connection.commit()
+                return event, False
+            event = self._append_locked(
+                connection,
+                kind,
+                payload,
+                occurred=self.clock(),
+                identifier=self.id_factory(),
+            )
+            connection.execute(
+                "INSERT INTO logical_keys(namespace, logical_key, event_id) VALUES (?, ?, ?)",
+                (kind, logical_key, event.event_id),
+            )
+            connection.commit()
+            return event, True
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
+
     def allocate_counter(self, name: str, *, floor: int = 0) -> int:
         """Atomically reserve the next integer in a named monotonic sequence."""
 

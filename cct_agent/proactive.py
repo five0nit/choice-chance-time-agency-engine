@@ -250,6 +250,8 @@ class ProactiveEngine:
         today = [event for event in emitted if event.payload.get("time_bucket") == bucket]
         latest = emitted[-1] if emitted else None
         reasons: list[str] = []
+        if len(today) >= self.policy.daily_message_cap:
+            reasons.append("DAILY_CAP")
         if (
             latest is not None
             and latest.payload.get("time_bucket") == bucket
@@ -257,8 +259,6 @@ class ProactiveEngine:
             < self.policy.cooldown_wakes
         ):
             reasons.append("COOLDOWN")
-        if len(today) >= self.policy.daily_message_cap:
-            reasons.append("DAILY_CAP")
         return reasons
 
     def submit(
@@ -457,6 +457,31 @@ class ProactiveEngine:
     def status(self) -> dict[str, Any]:
         decisions = self.store.events("proactive.initiation.decided")
         emitted = self.store.events("proactive.message.emitted")
+        latest = emitted[-1] if emitted else None
+        latest_projection = (
+            {
+                "proposal_event_id": latest.payload.get("proposal_event_id"),
+                "packet_id_sha256": sha256(
+                    str(latest.payload.get("packet_id", "")).encode("utf-8")
+                ).hexdigest(),
+                "topic_id_sha256": sha256(
+                    str(latest.payload.get("topic_id", "")).encode("utf-8")
+                ).hexdigest(),
+                "content_digest": latest.payload.get("content_digest"),
+                "message_sha256": sha256(
+                    str(latest.payload.get("message", "")).encode("utf-8")
+                ).hexdigest(),
+                "message_chars": len(str(latest.payload.get("message", ""))),
+                "wake_index": latest.payload.get("wake_index"),
+                "time_bucket": latest.payload.get("time_bucket"),
+                "emission_boundary": latest.payload.get("emission_boundary"),
+                "external_effects": latest.payload.get("external_effects", 0),
+                "content_in_status": False,
+                "identifier_cleartext_in_status": False,
+            }
+            if latest
+            else None
+        )
         return {
             "thought_packets": len(self.store.events("proactive.thought.created")),
             "decisions": len(decisions),
@@ -467,7 +492,7 @@ class ProactiveEngine:
                 event.payload.get("decision") == "WAIT" for event in decisions
             ),
             "emitted_messages": len(emitted),
-            "last_emitted": dict(emitted[-1].payload) if emitted else None,
+            "last_emitted": latest_projection,
             "policy": {
                 "threshold": self.policy.threshold,
                 "cooldown_wakes": self.policy.cooldown_wakes,
@@ -479,6 +504,46 @@ class ProactiveEngine:
         }
 
     def _render_message(self, packet: ThoughtPacket) -> str:
+        if packet.source == "self:pursuit-dialogue-runner":
+            recommendation = packet.open_questions[0] if packet.open_questions else ""
+            binding = packet.open_questions[1] if len(packet.open_questions) > 1 else ""
+            lines = [
+                f"Priority decision: {packet.observation}",
+                recommendation,
+                *packet.hypotheses,
+                "Reply actions: ACTIVATE recommendation / REDIRECT alternate / REJECT NO_OP / CLOSE pursuit.",
+                binding,
+                "Reply records priority only; tool/effect authority remains separately gated.",
+            ]
+            message = "\n".join(lines)
+            if len(message) <= self.policy.max_message_chars:
+                return message
+            return message[: self.policy.max_message_chars - 1].rstrip() + "…"
+        if packet.source == "self:opportunity-initiative-runner":
+            rationale = packet.hypotheses[0] if packet.hypotheses else ""
+            authority = packet.hypotheses[1] if len(packet.hypotheses) > 1 else ""
+            outcome = packet.open_questions[0] if packet.open_questions else ""
+            opportunity_id = packet.topic_id.removeprefix("opportunity:")
+            body = "\n".join(
+                [
+                    f"Task opportunity: {packet.observation}",
+                    f"Why now: {rationale}",
+                    f"Proposed outcome: {outcome}",
+                ]
+            )
+            footer = "\n".join(
+                [
+                    f"Authority: {authority}",
+                    "Proposal text is untrusted; inspect evidence before acting.",
+                    "Operator feedback: ask Hermes to record INTERESTED / SKIP / SNOOZE(until YYYY-MM-DD) / DONE / BLOCKED.",
+                    f"Opportunity ID: {opportunity_id}",
+                    f"Confidence: {1.0 - packet.uncertainty:.2f}",
+                ]
+            )
+            allowance = self.policy.max_message_chars - len(footer) - 1
+            if len(body) > allowance:
+                body = body[: max(0, allowance - 1)].rstrip() + "…"
+            return body + "\n" + footer
         prefix = {
             "ASK": "Question worth resolving",
             "SHARE": "Useful update",

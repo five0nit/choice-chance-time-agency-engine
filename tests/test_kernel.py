@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import replace
 from hashlib import sha256
 import json
+import multiprocessing
 import os
 from pathlib import Path
 import sqlite3
@@ -10,8 +11,40 @@ import tempfile
 import unittest
 from typing import Any, Callable
 
-from cct_agent import AgencyKernel, EventStore, Option, default_constitution
+from cct_agent import (
+    AgencyKernel,
+    Constitution,
+    EventStore,
+    Option,
+    Value,
+    default_constitution,
+    resolve_constitution,
+)
 import hermes_plugin
+
+
+def _concurrent_constitution_initializer(
+    database: str,
+    barrier: Any,
+    results: Any,
+) -> None:
+    class BarrierStore(EventStore):
+        waited = False
+
+        def events(self, kind: str | None = None):  # type: ignore[no-untyped-def]
+            events = super().events(kind)
+            if kind == "constitution.initialized" and not events and not self.waited:
+                self.waited = True
+                barrier.wait(timeout=10)
+            return events
+
+    try:
+        event = AgencyKernel(
+            BarrierStore(database), default_constitution("concurrent-agent")
+        ).initialize()
+        results.put(("ok", event.event_id))
+    except Exception as exc:  # pragma: no cover - surfaced by parent assertion
+        results.put((type(exc).__name__, str(exc)))
 
 
 class KernelTestCase(unittest.TestCase):
@@ -205,6 +238,119 @@ class KernelTestCase(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "different constitution"):
             other.initialize()
 
+    def test_committed_constitution_survives_later_default_template_drift(self) -> None:
+        database = Path(self.tempdir.name) / "legacy-constitution.sqlite"
+        legacy = replace(
+            default_constitution("legacy-agent"),
+            values=tuple(
+                replace(
+                    value,
+                    description="Increase Mike's informed control and avoid covert manipulation.",
+                )
+                if value.name == "human_agency"
+                else value
+                for value in default_constitution("legacy-agent").values
+            ),
+        )
+        original = AgencyKernel(EventStore(database), legacy)
+        initialized = original.initialize()
+
+        store = EventStore(database)
+        restored = resolve_constitution(store, "legacy-agent")
+        restarted = AgencyKernel(store, restored)
+
+        self.assertEqual(restored, legacy)
+        self.assertEqual(restarted.initialize().event_id, initialized.event_id)
+        self.assertEqual(len(store.events("constitution.initialized")), 1)
+
+    def test_committed_constitution_rejects_identity_drift(self) -> None:
+        with self.assertRaisesRegex(ValueError, "configured identity does not match"):
+            resolve_constitution(self.kernel.store, "different-agent")
+
+    def test_committed_constitution_requires_its_own_fingerprint(self) -> None:
+        database = Path(self.tempdir.name) / "bad-fingerprint.sqlite"
+        store = EventStore(database)
+        constitution = default_constitution("fingerprint-agent")
+        payload = AgencyKernel(store, constitution).constitution_payload()
+        store.append(
+            "constitution.initialized",
+            {"constitution": payload, "fingerprint": "0" * 64},
+        )
+        self.assertTrue(store.verify_chain()["valid"])
+        with self.assertRaisesRegex(ValueError, "fingerprint is invalid"):
+            resolve_constitution(store, "fingerprint-agent")
+
+    def test_committed_constitution_can_follow_pre_root_metadata(self) -> None:
+        database = Path(self.tempdir.name) / "late-constitution.sqlite"
+        store = EventStore(database)
+        store.append("preconstitution.event", {"accepted": False})
+        constitution = default_constitution("late-agent")
+        initialized = AgencyKernel(store, constitution).initialize()
+
+        restored = resolve_constitution(EventStore(database), "late-agent")
+
+        self.assertEqual(initialized.seq, 2)
+        self.assertEqual(restored, constitution)
+        self.assertEqual(len(store.events("constitution.initialized")), 1)
+        self.assertTrue(store.verify_chain()["valid"])
+
+    def test_integer_numeric_representation_survives_exact_rehydration(self) -> None:
+        database = Path(self.tempdir.name) / "integer-constitution.sqlite"
+        constitution = Constitution(
+            identity="integer-agent",
+            values=(Value("truth", 1, "Preserve exact numeric representation."),),
+            constraints=("Keep the committed root exact.",),
+            risk_aversion=1,
+            time_discount=0,
+            exploration_rate=0,
+            temperature=1,
+            epistemic_bonus=0,
+            irreversibility_penalty=0,
+        )
+        initialized = AgencyKernel(EventStore(database), constitution).initialize()
+
+        store = EventStore(database)
+        restored = resolve_constitution(store, "integer-agent")
+        restarted = AgencyKernel(store, restored)
+
+        self.assertIs(type(restored.values[0].weight), int)
+        self.assertIs(type(restored.risk_aversion), int)
+        self.assertEqual(restarted.constitution_fingerprint(), initialized.payload["fingerprint"])
+        self.assertEqual(restarted.initialize().event_id, initialized.event_id)
+
+    def test_concurrent_processes_create_one_canonical_constitution(self) -> None:
+        database = Path(self.tempdir.name) / "concurrent-constitution.sqlite"
+        EventStore(database)
+        context = multiprocessing.get_context("fork")
+        barrier = context.Barrier(2)
+        results = context.Queue()
+        processes = [
+            context.Process(
+                target=_concurrent_constitution_initializer,
+                args=(str(database), barrier, results),
+            )
+            for _ in range(2)
+        ]
+
+        for process in processes:
+            process.start()
+        for process in processes:
+            process.join(timeout=15)
+        outcomes = [results.get(timeout=2) for _ in processes]
+
+        self.assertEqual([process.exitcode for process in processes], [0, 0])
+        self.assertEqual([outcome[0] for outcome in outcomes], ["ok", "ok"])
+        self.assertEqual(len({outcome[1] for outcome in outcomes}), 1)
+        store = EventStore(database)
+        initialized = store.events("constitution.initialized")
+        self.assertEqual(len(initialized), 1)
+        self.assertEqual(initialized[0].seq, 1)
+        self.assertTrue(store.verify_chain()["valid"])
+        self.assertEqual(
+            resolve_constitution(store, "concurrent-agent").identity,
+            "concurrent-agent",
+        )
+
     def test_hash_chain_detects_tampering(self) -> None:
         self.kernel.deliberate(
             goal_id=self.goal.id,
@@ -226,6 +372,7 @@ class FakePluginContext:
     def __init__(self, config: dict[str, object] | None = None) -> None:
         self.tools: dict[str, Callable[..., str]] = {}
         self.hooks: dict[str, Callable[..., Any]] = {}
+        self.middlewares: list[tuple[str, Callable[..., Any]]] = []
         self.schemas: dict[str, dict[str, Any]] = {}
         self.config = dict(config or {})
 
@@ -244,8 +391,47 @@ class FakePluginContext:
     def register_hook(self, name: str, handler: Callable[..., Any]) -> None:
         self.hooks[name] = handler
 
+    def register_middleware(
+        self, middleware_type: str, callback: Callable[..., Any]
+    ) -> None:
+        self.middlewares.append((middleware_type, callback))
+
 
 class HermesPluginTestCase(unittest.TestCase):
+    def test_plugin_rehydrates_legacy_profile_constitution(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            previous_home = os.environ.get("HERMES_HOME")
+            previous_identity = os.environ.pop("CCT_IDENTITY", None)
+            home = Path(tempdir) / "hermes-home"
+            database = home / "cct-agency" / "agency.sqlite"
+            os.environ["HERMES_HOME"] = str(home)
+            legacy = replace(
+                default_constitution("Configured-CCT"),
+                values=tuple(
+                    replace(value, description="Profile-specific durable wording.")
+                    if value.name == "human_agency"
+                    else value
+                    for value in default_constitution("Configured-CCT").values
+                ),
+            )
+            AgencyKernel(EventStore(database), legacy).initialize()
+            try:
+                context = FakePluginContext({"identity": "Configured-CCT"})
+                hermes_plugin.register(context)
+                status = json.loads(context.tools["cct_status"]({}))
+                self.assertEqual(status["status"]["identity"], "Configured-CCT")
+                self.assertEqual(
+                    status["status"]["constitution_fingerprint"],
+                    AgencyKernel(EventStore(database), legacy).constitution_fingerprint(),
+                )
+            finally:
+                if previous_home is None:
+                    os.environ.pop("HERMES_HOME", None)
+                else:
+                    os.environ["HERMES_HOME"] = previous_home
+                if previous_identity is not None:
+                    os.environ["CCT_IDENTITY"] = previous_identity
+
     def test_plugin_reads_public_identity_and_source_from_config(self) -> None:
         with tempfile.TemporaryDirectory() as tempdir:
             previous_home = os.environ.get("HERMES_HOME")
@@ -253,12 +439,15 @@ class HermesPluginTestCase(unittest.TestCase):
             previous_identity = os.environ.pop("CCT_IDENTITY", None)
             source = Path(tempdir) / "project_changes.jsonl"
             source.write_text("", encoding="utf-8")
+            inspection_root = Path(tempdir) / "inspection-root"
+            inspection_root.mkdir()
             os.environ["HERMES_HOME"] = str(Path(tempdir) / "hermes-home")
             try:
                 context = FakePluginContext(
                     {
                         "identity": "Configured-CCT",
                         "team_sync_source": str(source),
+                        "inspection_root": str(inspection_root),
                     }
                 )
                 hermes_plugin.register(context)
@@ -267,6 +456,9 @@ class HermesPluginTestCase(unittest.TestCase):
                 self.assertTrue(status["continuity_sensor"]["source_configured"])
                 self.assertEqual(
                     status["continuity_sensor"]["source"], "configured-team-sync"
+                )
+                self.assertTrue(
+                    status["personal_agency"]["inspection_root_configured"]
                 )
             finally:
                 if previous_home is None:
@@ -305,6 +497,12 @@ class HermesPluginTestCase(unittest.TestCase):
                         "cct_cognitive_status",
                         "cct_observe",
                         "cct_self_model",
+                        "cct_principal_status",
+                        "cct_principal_evaluate",
+                        "cct_principal_propose",
+                        "cct_capability_status",
+                        "cct_capability_evaluate",
+                        "cct_workspace_inspect",
                         "cct_verify_introspection",
                         "cct_proactive_status",
                         "cct_topic_update",
@@ -312,7 +510,12 @@ class HermesPluginTestCase(unittest.TestCase):
                     },
                 )
                 self.assertEqual(
-                    set(context.hooks), {"pre_llm_call", "post_llm_call"}
+                    set(context.hooks),
+                    {"pre_gateway_dispatch", "pre_llm_call", "post_llm_call"},
+                )
+                self.assertEqual(
+                    [kind for kind, _callback in context.middlewares],
+                    ["tool_execution"],
                 )
                 plugin_store = EventStore(
                     Path(os.environ["HERMES_HOME"]) / "cct-agency" / "agency.sqlite"
@@ -328,13 +531,27 @@ class HermesPluginTestCase(unittest.TestCase):
                     },
                 )
                 status = json.loads(context.tools["cct_status"]({}))
-                self.assertEqual(status["plugin_version"], "0.7.0")
+                self.assertEqual(status["plugin_version"], "0.9.0a7")
                 self.assertEqual(status["status"]["identity"], "Public-Test-CCT")
                 self.assertEqual(status["autonomy"]["authority"]["level"], 1)
+                json.loads(
+                    context.tools["cct_form_goal"](
+                        {
+                            "goal_id": "plugin-proposal-goal",
+                            "statement": "Evaluate one evidence-backed plugin opportunity.",
+                            "rationale": "The proposal tool now requires an active goal.",
+                            "source": "joint",
+                            "horizon": "short",
+                            "alignment": {"truth": 0.8, "competence": 0.7},
+                            "evidence": ["test:plugin-proposal-goal"],
+                        }
+                    )
+                )
                 proposed = json.loads(
                     context.tools["cct_opportunity_propose"](
                         {
                             "opportunity_id": "plugin-proposal",
+                            "goal_id": "plugin-proposal-goal",
                             "title": "Propose local evidence",
                             "rationale": "A structured proposal improves the portfolio.",
                             "objective": "Create a host-reviewed local evidence artifact.",
@@ -346,6 +563,11 @@ class HermesPluginTestCase(unittest.TestCase):
                 self.assertFalse(proposed["execution_authority_granted"])
                 autonomy_status = json.loads(context.tools["cct_autonomy_status"]({}))
                 self.assertEqual(autonomy_status["autonomy"]["opportunities"]["open"], 1)
+                self.assertIsNone(
+                    autonomy_status["autonomy"]["opportunities"]["rows"][0][
+                        "opportunity_id"
+                    ]
+                )
                 autonomy_run = json.loads(
                     context.tools["cct_autonomy_run"]({"seed": 0, "run_id": "plugin-run"})
                 )
@@ -442,11 +664,26 @@ class HermesPluginTestCase(unittest.TestCase):
                 )
                 self.assertTrue(topic["success"])
                 self.assertEqual(topic["persistence"]["continuity_scope"], "profile")
-                self.assertTrue(
+                self.assertFalse(
                     topic["persistence"]["caller_supplied_summary_persisted"]
                 )
                 self.assertFalse(
+                    topic["persistence"]["caller_supplied_text_persisted"]
+                )
+                self.assertRegex(
+                    topic["persistence"]["producer_content_sha256"],
+                    r"^[0-9a-f]{64}$",
+                )
+                self.assertEqual(topic["topic"]["status"], "paused")
+                self.assertFalse(
                     topic["persistence"]["automatic_raw_conversation_capture"]
+                )
+                self.assertFalse(topic["persistence"]["proactive_eligible"])
+                self.assertTrue(topic["persistence"]["semantic_taint"])
+                self.assertTrue(topic["persistence"]["caller_source_ignored"])
+                self.assertEqual(
+                    topic["topic"]["source"],
+                    "untrusted:model-callable-topic",
                 )
                 topic_parameters = context.schemas["cct_topic_update"]["parameters"]
                 think_parameters = context.schemas["cct_proactive_think"]["parameters"]
@@ -478,7 +715,10 @@ class HermesPluginTestCase(unittest.TestCase):
                 )
 
                 proactive_injected = context.hooks["pre_llm_call"]()
-                self.assertIn("Plugin continuity is active", proactive_injected["context"])
+                self.assertNotIn(
+                    "Plugin continuity is active",
+                    proactive_injected.get("context", ""),
+                )
                 thought = json.loads(
                     context.tools["cct_proactive_think"](
                         {
@@ -500,9 +740,15 @@ class HermesPluginTestCase(unittest.TestCase):
                         }
                     )
                 )
-                self.assertEqual(thought["initiation"]["decision"], "SEND")
+                self.assertEqual(thought["initiation"]["decision"], "WAIT")
+                self.assertEqual(
+                    thought["initiation"]["reason_codes"],
+                    ["UNTRUSTED_MODEL_CALLABLE_CONTENT"],
+                )
+                self.assertEqual(thought["initiation"]["message"], "")
+                self.assertFalse(thought["packet"]["producer_text_persisted"])
                 proactive = json.loads(context.tools["cct_proactive_status"]({}))
-                self.assertEqual(proactive["proactive"]["engine"]["thought_packets"], 1)
+                self.assertEqual(proactive["proactive"]["engine"]["thought_packets"], 0)
                 context.hooks["post_llm_call"](
                     session_id="session-test",
                     user_message="hello",
@@ -512,6 +758,22 @@ class HermesPluginTestCase(unittest.TestCase):
                 )
                 store = EventStore(
                     Path(os.environ["HERMES_HOME"]) / "cct-agency" / "agency.sqlite"
+                )
+                self.assertNotIn(
+                    "Plugin continuity is active",
+                    json.dumps([event.payload for event in store.events()]),
+                )
+                self.assertNotIn(
+                    "Which check runs next?",
+                    json.dumps([event.payload for event in store.events()]),
+                )
+                self.assertNotIn(
+                    "A bounded plugin update is ready.",
+                    json.dumps([event.payload for event in store.events()]),
+                )
+                self.assertNotIn(
+                    "The tool surface can preserve provenance.",
+                    json.dumps([event.payload for event in store.events()]),
                 )
                 observed = store.latest("hermes.turn_observed")
                 self.assertIsNotNone(observed)
@@ -536,6 +798,87 @@ class HermesPluginTestCase(unittest.TestCase):
                 if previous_identity is None:
                     os.environ.pop("CCT_IDENTITY", None)
                 else:
+                    os.environ["CCT_IDENTITY"] = previous_identity
+
+    def test_all_registered_tool_schemas_bound_model_controlled_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            previous_home = os.environ.get("HERMES_HOME")
+            previous_identity = os.environ.pop("CCT_IDENTITY", None)
+            os.environ["HERMES_HOME"] = str(Path(tempdir) / "hermes-home")
+            try:
+                context = FakePluginContext()
+                hermes_plugin.register(context)
+                issues: list[str] = []
+
+                def inspect(tool: str, path: str, node: object) -> None:
+                    if not isinstance(node, dict):
+                        return
+                    kind = node.get("type")
+                    if kind == "object":
+                        if (
+                            "properties" in node
+                            and node.get("additionalProperties") is not False
+                        ):
+                            issues.append(f"{tool}:{path}:open-object")
+                        for key, value in node.get("properties", {}).items():
+                            inspect(tool, f"{path}.properties.{key}", value)
+                        if isinstance(node.get("additionalProperties"), dict):
+                            inspect(
+                                tool,
+                                f"{path}.additionalProperties",
+                                node["additionalProperties"],
+                            )
+                    elif kind == "array":
+                        if "maxItems" not in node:
+                            issues.append(f"{tool}:{path}:unbounded-array")
+                        inspect(tool, f"{path}.items", node.get("items"))
+                    elif kind == "string":
+                        if "maxLength" not in node and "enum" not in node:
+                            issues.append(f"{tool}:{path}:unbounded-string")
+                    inspect(tool, f"{path}.propertyNames", node.get("propertyNames"))
+
+                for tool, schema in context.schemas.items():
+                    inspect(tool, "$", schema["parameters"])
+                self.assertEqual(issues, [])
+            finally:
+                if previous_home is None:
+                    os.environ.pop("HERMES_HOME", None)
+                else:
+                    os.environ["HERMES_HOME"] = previous_home
+                if previous_identity is not None:
+                    os.environ["CCT_IDENTITY"] = previous_identity
+
+    def test_goal_tool_rejects_oversized_or_unknown_payload_before_persistence(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tempdir:
+            previous_home = os.environ.get("HERMES_HOME")
+            previous_identity = os.environ.pop("CCT_IDENTITY", None)
+            home = Path(tempdir) / "hermes-home"
+            os.environ["HERMES_HOME"] = str(home)
+            try:
+                context = FakePluginContext()
+                hermes_plugin.register(context)
+                form_goal = context.tools["cct_form_goal"]
+                base = {
+                    "goal_id": "bounded-plugin-goal",
+                    "statement": "Bound model-callable goal input.",
+                    "rationale": "Persistence must match the published schema.",
+                    "alignment": {"truth": 0.8},
+                    "evidence": ["test:bounded-plugin-goal"],
+                }
+                with self.assertRaisesRegex(ValueError, "statement exceeds 2000"):
+                    form_goal({**base, "statement": "x" * 2001})
+                with self.assertRaisesRegex(ValueError, "unknown parameter"):
+                    form_goal({**base, "producer_text": "untrusted"})
+                store = EventStore(home / "cct-agency" / "agency.sqlite")
+                self.assertEqual(store.events("goal.formed"), [])
+            finally:
+                if previous_home is None:
+                    os.environ.pop("HERMES_HOME", None)
+                else:
+                    os.environ["HERMES_HOME"] = previous_home
+                if previous_identity is not None:
                     os.environ["CCT_IDENTITY"] = previous_identity
 
 

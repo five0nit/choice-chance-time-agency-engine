@@ -397,7 +397,7 @@ class InitiativeTestCase(unittest.TestCase):
             topic_id="runner-race",
             title="Runner race",
             summary="Only one concurrent runner may emit this revision.",
-            source="external:test",
+            source="host_adapter:test",
             status="open",
             logical_tick=1,
             questions=("Did exactly one runner emit?",),

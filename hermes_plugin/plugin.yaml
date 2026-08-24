@@ -1,3 +1,54 @@
 name: cct-agency
-version: 0.7.0
+version: 0.9.0a7
 description: Choice-Chance-Time Agency Engine tools for verifiable, progressively earned autonomy.
+author: Michael Costea
+license: MIT
+homepage: https://github.com/five0nit/choice-chance-time-agency-engine
+tags: [ai-agents, autonomy, governance, event-sourcing, hermes]
+provides_tools:
+  - cct_status
+  - cct_autonomy_status
+  - cct_opportunity_propose
+  - cct_autonomy_run
+  - cct_form_goal
+  - cct_deliberate
+  - cct_record_outcome
+  - cct_reflect
+  - cct_cognitive_status
+  - cct_observe
+  - cct_self_model
+  - cct_principal_status
+  - cct_principal_evaluate
+  - cct_principal_propose
+  - cct_capability_status
+  - cct_capability_evaluate
+  - cct_workspace_inspect
+  - cct_verify_introspection
+  - cct_proactive_status
+  - cct_topic_update
+  - cct_proactive_think
+provides_hooks:
+  - pre_gateway_dispatch
+  - pre_llm_call
+  - post_llm_call
+config_schema:
+  identity:
+    type: str
+    default: CCT-Agent
+    description: Stable identity written into a new CCT constitution.
+  team_sync_source:
+    type: str
+    default: ""
+    description: Optional absolute path to an owner-controlled team-sync JSONL source.
+  inspection_root:
+    type: str
+    default: ""
+    description: Optional absolute root for separately leased bounded workspace inspection.
+  mediated_tools:
+    type: list
+    default:
+      - cct_generalist2_profile_deploy
+      - cct_private_telegram_delivery
+    description: Exact CCT real-canary effect identifiers denied unless a live ticket and canonical host readback both verify.
+    items:
+      type: str

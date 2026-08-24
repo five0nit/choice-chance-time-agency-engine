@@ -17,11 +17,15 @@ It gives an agent:
 - append-only temporal memory with SHA-256 event chaining;
 - bounded global-workspace cognition;
 - proactive initiative with cooldown, caps, deduplication, and `WAIT`;
+- concrete principal-aligned task/opportunity cards with active-goal scouting and INTERESTED/SKIP/SNOOZE/DONE/BLOCKED receipts;
 - trusted metadata-only continuity sensors;
 - hierarchical objectives and temporal plans;
 - reversible local execution with independent verification;
 - receipt-backed outcome learning; and
-- authority that expands or contracts from demonstrated reliability.
+- authority that expands or contracts from demonstrated reliability;
+- an externally installed operator-principal covenant;
+- revocable typed capability leases; and
+- receipt-backed bounded workspace inspection.
 
 It is designed around one rule:
 
@@ -131,6 +135,61 @@ Higher authority means **more proven throughput**, not a silent jump to shell or
 
 Read the exact boundary and threat assumptions: [`docs/AUTHORITY_MODEL.md`](docs/AUTHORITY_MODEL.md).
 
+## Personal-agency and opportunity-initiative development branch
+
+Version `0.9.0a3` contains the `0.8.0a1` **extension-of-principal** layer plus a proactive opportunity bridge and restart-safe constitution continuity:
+
+```text
+structured intent
+→ principal alignment
+→ typed capability lease
+→ combined authorization
+→ bounded inspection
+→ hash receipt
+```
+
+```text
+persistent opportunity
+→ principal review
+→ deterministic priority
+→ shared cooldown/cap/dedupe
+→ concrete task card
+→ INTERESTED / SKIP / SNOOZE / DONE / BLOCKED receipt
+```
+
+Principal alignment and effect authority remain separate. The model can inspect
+status, evaluate intent, and propose covenant revisions; it cannot install its
+own profile, register capabilities, grant leases, or self-ratify revisions.
+
+The first real capability reads one bounded UTF-8 file beneath an explicitly
+configured root after principal, scope, lease, expiry, action, and byte gates
+all pass. File content is returned to the caller but excluded from the canonical
+event ledger.
+
+Design and CLI instructions: [`docs/PERSONAL_AGENCY.md`](docs/PERSONAL_AGENCY.md).
+Verification receipts: [`docs/PHASE11_VERIFICATION.md`](docs/PHASE11_VERIFICATION.md).
+Opportunity-initiative contract: [`docs/OPPORTUNITY_INITIATIVE.md`](docs/OPPORTUNITY_INITIATIVE.md).
+Phase 12 verification receipts: [`docs/PHASE12_VERIFICATION.md`](docs/PHASE12_VERIFICATION.md).
+
+Run the Phase 11 acceptance episode:
+
+```bash
+receipt=$(mktemp -d /tmp/cct-phase11-demo-XXXXXX)
+python scripts/cct_phase11_demo.py \
+  --db "$receipt/agency.sqlite" \
+  --workspace "$receipt/workspace"
+```
+
+Run the Phase 12 opportunity-initiative episode:
+
+```bash
+receipt=$(mktemp -d /tmp/cct-phase12-demo-XXXXXX)
+python scripts/cct_phase12_demo.py \
+  --db "$receipt/agency.sqlite" \
+  --workspace "$receipt/workspace" \
+  --state-root "$receipt/autonomy"
+```
+
 ## Quick start
 
 ### Requirements
@@ -219,7 +278,9 @@ positives for denylist and inert security-test fixtures are resolved upstream.
 
 Start a new Hermes session after enabling so the tool surface is rebuilt.
 
-The plugin exposes fifteen tools and two lifecycle hooks. It stores profile-scoped state under:
+The public `v0.7.0` plugin exposes 15 tools and two lifecycle hooks. The
+`0.9.0a3` development branch exposes 21 tools and two hooks. It stores
+profile-scoped state under:
 
 ```text
 $HERMES_HOME/cct-agency/
@@ -284,6 +345,7 @@ cct_agent/
   initiative.py          Trusted promotion and verified-feedback calibration
   team_sync_sensor.py    Metadata-only trusted continuity
   autonomy.py            Portfolio, plans, executor, verification, learning
+  opportunity_initiative.py  Principal-aligned task cards and feedback receipts
 hermes_plugin/            Pip entry-point implementation
 scripts/                  Model-free scheduler and acceptance entry points
 tests/                    Behavioral, race, restart, privacy, and replay tests
@@ -300,6 +362,7 @@ docs/                     Theory, architecture, authority, benefits, roadmap
 | [`INITIATIVE.md`](docs/INITIATIVE.md) | Proactive dialogue and feedback calibration |
 | [`TRUSTED_SENSORS.md`](docs/TRUSTED_SENSORS.md) | Metadata-only event ingestion and cursor semantics |
 | [`AUTONOMY.md`](docs/AUTONOMY.md) | Opportunity-to-outcome execution loop |
+| [`OPPORTUNITY_INITIATIVE.md`](docs/OPPORTUNITY_INITIATIVE.md) | Proactive task cards, feedback, dedupe, and authority separation |
 | [`AUTHORITY_MODEL.md`](docs/AUTHORITY_MODEL.md) | Exact permissions, limits, verification, and rollback model |
 | [`BENEFITS.md`](docs/BENEFITS.md) | Practical and research benefits |
 | [`HERMES_INTEGRATION.md`](docs/HERMES_INTEGRATION.md) | Install, enable, configure, and verify the plugin |

@@ -1,0 +1,16 @@
+{
+  "name": "workspace.inspect",
+  "description": "Read one bounded UTF-8 file from an approved workspace.",
+  "effect_kind": "read_text",
+  "intent_domain": "workspace",
+  "intent_action": "inspect",
+  "risk_class": "observe",
+  "scopes": ["docs/**", "reports/**"],
+  "verifier_id": "sha256-readback",
+  "reversible": true,
+  "max_actions": 4,
+  "max_bytes": 16384,
+  "max_value_microunits": 0,
+  "default_mode": "require_approval",
+  "active": true
+}

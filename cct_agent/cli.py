@@ -7,22 +7,36 @@ from dataclasses import replace
 from dataclasses import asdict
 from datetime import UTC, datetime
 import json
+import os
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
 from .autonomy import AutonomyEngine
+from .capabilities import (
+    CapabilityLease,
+    CapabilityRegistry,
+    CapabilityRequest,
+    CapabilitySpec,
+    WorkspaceInspector,
+)
 from .cognitive_cycle import CognitiveCycle, Observation
 from .initiative import HMACFeedbackAuthority, InitiativeBridge, ProactiveFeedback
-from .kernel import AgencyKernel, default_constitution
+from .kernel import AgencyKernel, default_constitution, resolve_constitution
 from .models import Option, options_from_dicts
+from .opportunity_initiative import OpportunityInitiative
 from .proactive import InitiationSignals, ProactiveEngine
+from .principal import PrincipalIntent, PrincipalModel, PrincipalProfile
 from .runner import ProactiveRunner
 from .store import EventStore
 from .topics import TopicStore
 
 
 def _kernel(db: str) -> AgencyKernel:
-    kernel = AgencyKernel(EventStore(Path(db)), default_constitution())
+    store = EventStore(Path(db))
+    kernel = AgencyKernel(
+        store,
+        resolve_constitution(store, os.environ.get("CCT_IDENTITY", "CCT-Agent")),
+    )
     kernel.initialize()
     return kernel
 
@@ -49,6 +63,13 @@ def _parse_alignment(values: Sequence[str]) -> dict[str, float]:
         name, raw_value = item.split("=", 1)
         result[name] = float(raw_value)
     return result
+
+
+def _json_object(path: str) -> dict[str, Any]:
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("JSON input must contain one object")
+    return {str(key): value for key, value in payload.items()}
 
 
 def command_init(args: argparse.Namespace) -> None:
@@ -122,6 +143,114 @@ def command_autonomy_run(args: argparse.Namespace) -> None:
             decision_id=args.decision_id,
         )
     )
+
+
+def command_opportunity_feedback(args: argparse.Namespace) -> None:
+    _print(
+        OpportunityInitiative(EventStore(args.db)).record_feedback(
+            feedback_id=args.feedback_id,
+            opportunity_id=args.opportunity_id,
+            principal_id=args.principal_id,
+            decision=args.decision,
+            evidence=tuple(args.evidence),
+            source_authority=args.authority,
+            snooze_until=args.snooze_until,
+        )
+    )
+
+
+def command_principal_install(args: argparse.Namespace) -> None:
+    model = PrincipalModel(EventStore(args.db))
+    installed = model.install(
+        PrincipalProfile.from_payload(_json_object(args.profile)),
+        authority=args.authority,
+        evidence=tuple(args.evidence),
+        expected_previous_digest=args.expected_previous_digest,
+    )
+    _print(installed)
+
+
+def command_principal_status(args: argparse.Namespace) -> None:
+    _print(PrincipalModel(EventStore(args.db)).status())
+
+
+def command_principal_evaluate(args: argparse.Namespace) -> None:
+    decision = PrincipalModel(EventStore(args.db)).evaluate(
+        PrincipalIntent.from_payload(_json_object(args.intent))
+    )
+    _print(decision.as_payload() | {"event_id": decision.event_id})
+
+
+def command_principal_propose(args: argparse.Namespace) -> None:
+    proposal = PrincipalModel(EventStore(args.db)).propose_revision(
+        proposal_id=args.proposal_id,
+        statement=args.statement,
+        rationale=args.rationale,
+        tags=tuple(args.tag),
+        evidence=tuple(args.evidence),
+    )
+    _print(proposal)
+
+
+def command_capability_register(args: argparse.Namespace) -> None:
+    registry = CapabilityRegistry(EventStore(args.db))
+    registered = registry.register(
+        CapabilitySpec.from_payload(_json_object(args.spec)),
+        authority=args.authority,
+        evidence=tuple(args.evidence),
+        expected_previous_digest=args.expected_previous_digest,
+    )
+    _print(registered)
+
+
+def command_capability_grant(args: argparse.Namespace) -> None:
+    registry = CapabilityRegistry(EventStore(args.db))
+    _print(registry.grant(CapabilityLease.from_payload(_json_object(args.lease))))
+
+
+def command_capability_revoke(args: argparse.Namespace) -> None:
+    registry = CapabilityRegistry(EventStore(args.db))
+    _print(
+        registry.revoke(
+            args.lease_id,
+            authority=args.authority,
+            reason=args.reason,
+        )
+    )
+
+
+def command_capability_status(args: argparse.Namespace) -> None:
+    _print(CapabilityRegistry(EventStore(args.db)).status())
+
+
+def command_capability_evaluate(args: argparse.Namespace) -> None:
+    decision = CapabilityRegistry(EventStore(args.db)).evaluate(
+        CapabilityRequest.from_payload(_json_object(args.request))
+    )
+    _print(decision.as_payload() | {"event_id": decision.event_id})
+
+
+def command_workspace_inspect(args: argparse.Namespace) -> None:
+    event_store = EventStore(args.db)
+    inspector = WorkspaceInspector(
+        event_store,
+        PrincipalModel(event_store),
+        CapabilityRegistry(event_store),
+        args.root,
+    )
+    try:
+        result = inspector.inspect(
+            principal_id=args.principal_id,
+            lease_id=args.lease_id,
+            relative_path=args.path,
+            intent_id=args.intent_id,
+            request_id=args.request_id,
+            authorization_id=args.authorization_id,
+            maximum_bytes=args.maximum_bytes,
+        )
+    finally:
+        inspector.close()
+    _print(result)
 
 
 def command_cognitive_status(args: argparse.Namespace) -> None:
@@ -632,6 +761,95 @@ def build_parser() -> argparse.ArgumentParser:
     autonomy_run_parser.add_argument("--run-id")
     autonomy_run_parser.add_argument("--decision-id")
     autonomy_run_parser.set_defaults(func=command_autonomy_run)
+
+    opportunity_feedback_parser = subparsers.add_parser("opportunity-feedback")
+    opportunity_feedback_parser.add_argument("--feedback-id", required=True)
+    opportunity_feedback_parser.add_argument("--opportunity-id", required=True)
+    opportunity_feedback_parser.add_argument("--principal-id", required=True)
+    opportunity_feedback_parser.add_argument(
+        "--decision",
+        choices=[
+            "INTERESTED",
+            "SKIP",
+            "SNOOZE",
+            "DONE",
+            "BLOCKED",
+            "ACCEPT",
+            "DECLINE",
+        ],
+        required=True,
+    )
+    opportunity_feedback_parser.add_argument(
+        "--evidence", action="append", required=True
+    )
+    opportunity_feedback_parser.add_argument(
+        "--authority", choices=["operator", "host_adapter"], required=True
+    )
+    opportunity_feedback_parser.add_argument("--snooze-until")
+    opportunity_feedback_parser.set_defaults(func=command_opportunity_feedback)
+
+    principal_install_parser = subparsers.add_parser("principal-install")
+    principal_install_parser.add_argument("--profile", required=True)
+    principal_install_parser.add_argument(
+        "--authority", choices=["operator", "host_adapter"], required=True
+    )
+    principal_install_parser.add_argument("--evidence", action="append", required=True)
+    principal_install_parser.add_argument("--expected-previous-digest")
+    principal_install_parser.set_defaults(func=command_principal_install)
+
+    principal_status_parser = subparsers.add_parser("principal-status")
+    principal_status_parser.set_defaults(func=command_principal_status)
+
+    principal_evaluate_parser = subparsers.add_parser("principal-evaluate")
+    principal_evaluate_parser.add_argument("--intent", required=True)
+    principal_evaluate_parser.set_defaults(func=command_principal_evaluate)
+
+    principal_propose_parser = subparsers.add_parser("principal-propose")
+    principal_propose_parser.add_argument("--proposal-id", required=True)
+    principal_propose_parser.add_argument("--statement", required=True)
+    principal_propose_parser.add_argument("--rationale", required=True)
+    principal_propose_parser.add_argument("--tag", action="append", required=True)
+    principal_propose_parser.add_argument("--evidence", action="append", required=True)
+    principal_propose_parser.set_defaults(func=command_principal_propose)
+
+    capability_register_parser = subparsers.add_parser("capability-register")
+    capability_register_parser.add_argument("--spec", required=True)
+    capability_register_parser.add_argument(
+        "--authority", choices=["operator", "host_adapter"], required=True
+    )
+    capability_register_parser.add_argument("--evidence", action="append", required=True)
+    capability_register_parser.add_argument("--expected-previous-digest")
+    capability_register_parser.set_defaults(func=command_capability_register)
+
+    capability_grant_parser = subparsers.add_parser("capability-grant")
+    capability_grant_parser.add_argument("--lease", required=True)
+    capability_grant_parser.set_defaults(func=command_capability_grant)
+
+    capability_revoke_parser = subparsers.add_parser("capability-revoke")
+    capability_revoke_parser.add_argument("--lease-id", required=True)
+    capability_revoke_parser.add_argument(
+        "--authority", choices=["operator", "host_adapter"], required=True
+    )
+    capability_revoke_parser.add_argument("--reason", required=True)
+    capability_revoke_parser.set_defaults(func=command_capability_revoke)
+
+    capability_status_parser = subparsers.add_parser("capability-status")
+    capability_status_parser.set_defaults(func=command_capability_status)
+
+    capability_evaluate_parser = subparsers.add_parser("capability-evaluate")
+    capability_evaluate_parser.add_argument("--request", required=True)
+    capability_evaluate_parser.set_defaults(func=command_capability_evaluate)
+
+    workspace_inspect_parser = subparsers.add_parser("workspace-inspect")
+    workspace_inspect_parser.add_argument("--root", required=True)
+    workspace_inspect_parser.add_argument("--path", required=True)
+    workspace_inspect_parser.add_argument("--principal-id", required=True)
+    workspace_inspect_parser.add_argument("--lease-id", required=True)
+    workspace_inspect_parser.add_argument("--intent-id", required=True)
+    workspace_inspect_parser.add_argument("--request-id", required=True)
+    workspace_inspect_parser.add_argument("--authorization-id", required=True)
+    workspace_inspect_parser.add_argument("--maximum-bytes", type=int, default=8192)
+    workspace_inspect_parser.set_defaults(func=command_workspace_inspect)
 
     cognitive_status_parser = subparsers.add_parser("cognitive-status")
     cognitive_status_parser.set_defaults(func=command_cognitive_status)

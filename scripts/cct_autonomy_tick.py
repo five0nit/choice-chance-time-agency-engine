@@ -21,7 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from cct_agent import AgencyKernel, AutonomyEngine, EventStore, default_constitution  # noqa: E402
+from cct_agent import AgencyKernel, AutonomyEngine, EventStore, resolve_constitution  # noqa: E402
 
 _MAX_ADAPTER_BYTES = 65_536
 _MAX_ADAPTERS = 16
@@ -175,7 +175,8 @@ def main() -> int:
     state_root.mkdir(parents=True, exist_ok=True)
     store = EventStore(args.db)
     kernel = AgencyKernel(
-        store, default_constitution(os.environ.get("CCT_IDENTITY", "CCT-Agent"))
+        store,
+        resolve_constitution(store, os.environ.get("CCT_IDENTITY", "CCT-Agent")),
     )
     kernel.initialize()
     engine = AutonomyEngine(store, kernel, args.workspace, state_root=state_root)

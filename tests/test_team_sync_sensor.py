@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 import json
@@ -13,6 +14,7 @@ import unittest
 from unittest.mock import patch
 
 from cct_agent import (
+    AgencyKernel,
     EventStore,
     ProactiveRunner,
     TeamSyncSensor,
@@ -519,6 +521,48 @@ class TeamSyncSensorTestCase(unittest.TestCase):
             constitution.payload["constitution"]["identity"],
             "Configured-Sensor-CCT",
         )
+
+    def test_scheduler_rehydrates_existing_constitution_after_default_drift(self) -> None:
+        profile = Path(self.tempdir.name) / "legacy-profile"
+        profile.mkdir()
+        database = profile / "cct-agency" / "agency.sqlite"
+        legacy = replace(
+            default_constitution("Configured-Sensor-CCT"),
+            values=tuple(
+                replace(value, description="Legacy profile-specific wording.")
+                if value.name == "human_agency"
+                else value
+                for value in default_constitution("Configured-Sensor-CCT").values
+            ),
+        )
+        kernel = AgencyKernel(EventStore(database), legacy)
+        initialized = kernel.initialize()
+        script = Path(__file__).parents[1] / "scripts" / "cct_team_sync_tick.py"
+
+        result = subprocess.run(
+            [sys.executable, str(script), "--report"],
+            cwd=Path(__file__).parents[1],
+            env={
+                **os.environ,
+                "HERMES_HOME": str(profile),
+                "CCT_IDENTITY": "Configured-Sensor-CCT",
+                "CCT_TEAM_SYNC_SOURCE": str(self.source),
+            },
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        self.assertEqual(json.loads(result.stdout)["status"], "PRIMED")
+        profile_store = EventStore(database)
+        constitution = profile_store.latest("constitution.initialized")
+        self.assertIsNotNone(constitution)
+        assert constitution is not None
+        self.assertEqual(
+            constitution.event_id,
+            initialized.event_id,
+        )
+        self.assertEqual(len(profile_store.events("constitution.initialized")), 1)
 
     def test_scheduler_rejects_symlinked_state_directory_in_test_mode(self) -> None:
         profile = Path(self.tempdir.name) / "symlink-profile"
