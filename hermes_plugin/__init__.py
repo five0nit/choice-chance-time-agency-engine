@@ -34,9 +34,10 @@ from cct_agent.gateway_replies import GatewayPursuitReplyAdapter
 from cct_agent.mediation import ToolExecutionMediator, parse_mediated_tools
 from cct_agent.models import options_from_dicts
 from cct_agent.self_model import SelfModel
+from cct_agent.work_autonomy import work_autonomy_status
 
 
-PLUGIN_VERSION = "0.9.0a7"
+PLUGIN_VERSION = "0.9.0a8"
 CONTEXT_CHAR_BUDGET = 6000
 _PLUGIN_IDENTITY: str | None = None
 _PLUGIN_TEAM_SYNC_SOURCE: str | None = None
@@ -281,6 +282,7 @@ def _status_handler(params: dict[str, Any], **kwargs: Any) -> str:
             "cognition": CognitiveCycle(kernel).status(),
             "proactive": ProactiveRunner(kernel.store).status(),
             "autonomy": _autonomy().status(),
+            "work_autonomy": work_autonomy_status(kernel.store),
             "personal_agency": {
                 "principal": PrincipalModel(kernel.store).status(),
                 "capabilities": CapabilityRegistry(kernel.store).status(),

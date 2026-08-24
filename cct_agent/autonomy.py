@@ -540,11 +540,29 @@ class AutonomyEngine:
             )
         return goal_id
 
-    def select_opportunity(self, *, seed: int, decision_id: str | None = None) -> dict[str, Any]:
+    def select_opportunity(
+        self,
+        *,
+        seed: int,
+        decision_id: str | None = None,
+        opportunity_ids: Sequence[str] | None = None,
+    ) -> dict[str, Any]:
+        scoped_ids: frozenset[str] | None = None
+        if opportunity_ids is not None:
+            if not isinstance(opportunity_ids, (tuple, list, frozenset)):
+                raise ValueError("opportunity_ids must be a bounded sequence")
+            scoped_ids = frozenset(
+                _identifier("scoped opportunity id", str(identifier))
+                for identifier in opportunity_ids
+            )
+            if not 1 <= len(scoped_ids) <= 32:
+                raise ValueError("opportunity_ids must contain 1-32 unique ids")
         options: list[Option] = []
         learning: dict[str, dict[str, Any]] = {}
         for row in self.opportunities():
             if row.get("status") != "open":
+                continue
+            if scoped_ids is not None and row["opportunity_id"] not in scoped_ids:
                 continue
             capability = str(row["capability"])
             learned = self._capability_learning(capability)
@@ -934,9 +952,12 @@ class AutonomyEngine:
         seed: int,
         run_id: str | None = None,
         decision_id: str | None = None,
+        opportunity_id: str | None = None,
     ) -> dict[str, Any]:
         if run_id is not None:
             _identifier("run id", run_id)
+        if opportunity_id is not None:
+            opportunity_id = _identifier("scoped opportunity id", opportunity_id)
         with self._run_lock():
             resumed_start: Event | None = None
             if run_id:
@@ -958,8 +979,19 @@ class AutonomyEngine:
                     "decision_id": recorded_decision,
                     "opportunity_id": str(resumed_start.payload["opportunity_id"]),
                 }
+                if (
+                    opportunity_id is not None
+                    and selection["opportunity_id"] != opportunity_id
+                ):
+                    raise ValueError(
+                        "run resume opportunity_id conflicts with the recorded start"
+                    )
             else:
-                selection = self.select_opportunity(seed=seed, decision_id=decision_id)
+                selection = self.select_opportunity(
+                    seed=seed,
+                    decision_id=decision_id,
+                    opportunity_ids=(opportunity_id,) if opportunity_id else None,
+                )
             opportunity_id = str(selection["opportunity_id"])
             if opportunity_id == NO_OP_ID:
                 event = self.store.append_once(

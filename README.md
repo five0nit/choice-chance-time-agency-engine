@@ -18,6 +18,7 @@ It gives an agent:
 - bounded global-workspace cognition;
 - proactive initiative with cooldown, caps, deduplication, and `WAIT`;
 - concrete principal-aligned task/opportunity cards with active-goal scouting and INTERESTED/SKIP/SNOOZE/DONE/BLOCKED receipts;
+- proactive work suggestions that autonomously attempt one create-only, hash-verified local evidence audit and stay silent on unchanged wakes;
 - trusted metadata-only continuity sensors;
 - hierarchical objectives and temporal plans;
 - reversible local execution with independent verification;
@@ -137,7 +138,7 @@ Read the exact boundary and threat assumptions: [`docs/AUTHORITY_MODEL.md`](docs
 
 ## Personal-agency and opportunity-initiative development branch
 
-Version `0.9.0a3` contains the `0.8.0a1` **extension-of-principal** layer plus a proactive opportunity bridge and restart-safe constitution continuity:
+Version `0.9.0a8` contains the `0.8.0a1` **extension-of-principal** layer plus proactive opportunity and bounded work-autonomy bridges with restart-safe constitution continuity:
 
 ```text
 structured intent
@@ -171,6 +172,22 @@ Verification receipts: [`docs/PHASE11_VERIFICATION.md`](docs/PHASE11_VERIFICATIO
 Opportunity-initiative contract: [`docs/OPPORTUNITY_INITIATIVE.md`](docs/OPPORTUNITY_INITIATIVE.md).
 Phase 12 verification receipts: [`docs/PHASE12_VERIFICATION.md`](docs/PHASE12_VERIFICATION.md).
 
+Work-autonomy adds one deliberately narrow bridge:
+
+```text
+active persistent goals + trusted source-state token
+→ replayable goal choice versus NO_OP
+→ concrete work suggestion
+→ create-only private evidence audit
+→ SHA-256 verification receipt
+→ cooldown/cap/deduplicated scheduler message
+```
+
+It does **not** execute the suggested goal's requested shell, network, browser,
+publication, financial, credential, destructive, or irreversible effect. The
+first autonomous attempt remains a private local evidence audit under the same
+progressive create-only authority envelope.
+
 Run the Phase 11 acceptance episode:
 
 ```bash
@@ -189,6 +206,23 @@ python scripts/cct_phase12_demo.py \
   --workspace "$receipt/workspace" \
   --state-root "$receipt/autonomy"
 ```
+
+Run one work-autonomy tick against an initialized CCT state root:
+
+```bash
+cct-work-autonomy \
+  --state-root /path/to/cct-state \
+  --workspace-root /path/to/private-workspace \
+  --private-root /path/to/private-run-state \
+  --identity My-CCT-Agent \
+  --expected-module-root /path/to/installed/site-packages \
+  --expected-package-version 0.9.0a8 \
+  --time-bucket 2026-08-25 \
+  --message-only
+```
+
+An unchanged state produces no stdout. A new trusted source-state token can
+select the next least-attempted active goal.
 
 ## Quick start
 
@@ -346,6 +380,7 @@ cct_agent/
   team_sync_sensor.py    Metadata-only trusted continuity
   autonomy.py            Portfolio, plans, executor, verification, learning
   opportunity_initiative.py  Principal-aligned task cards and feedback receipts
+  work_autonomy.py       Work suggestion, local audit attempt, receipt, silence
 hermes_plugin/            Pip entry-point implementation
 scripts/                  Model-free scheduler and acceptance entry points
 tests/                    Behavioral, race, restart, privacy, and replay tests

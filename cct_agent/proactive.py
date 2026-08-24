@@ -544,6 +544,21 @@ class ProactiveEngine:
             if len(body) > allowance:
                 body = body[: max(0, allowance - 1)].rstrip() + "…"
             return body + "\n" + footer
+        if packet.source == "self:work-autonomy-runner":
+            attempted = packet.hypotheses[0] if packet.hypotheses else ""
+            boundary = packet.hypotheses[1] if len(packet.hypotheses) > 1 else ""
+            result = packet.open_questions[0] if packet.open_questions else ""
+            lines = [
+                f"Suggested work: {packet.observation}",
+                f"Attempted autonomously: {attempted}",
+                f"Result: {result}",
+                boundary,
+                f"Confidence: {1.0 - packet.uncertainty:.2f}",
+            ]
+            message = "\n".join(lines)
+            if len(message) <= self.policy.max_message_chars:
+                return message
+            return message[: self.policy.max_message_chars - 1].rstrip() + "…"
         prefix = {
             "ASK": "Question worth resolving",
             "SHARE": "Useful update",

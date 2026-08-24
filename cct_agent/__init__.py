@@ -146,6 +146,7 @@ from .verification import (
     VerificationRequest,
     VerifierSpec,
 )
+from .work_autonomy import WorkAutonomyRunner, work_autonomy_status
 
 __all__ = [
     "AgencyKernel",
@@ -272,9 +273,11 @@ __all__ = [
     "WorkspaceInspector",
     "WorkerAdvanceRequest",
     "WorkerClaimRequest",
+    "WorkAutonomyRunner",
     "canonical_no_op",
     "default_constitution",
     "resolve_constitution",
+    "work_autonomy_status",
 ]
 
-__version__ = "0.9.0a7"
+__version__ = "0.9.0a8"

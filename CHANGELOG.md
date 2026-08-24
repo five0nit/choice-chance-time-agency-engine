@@ -2,6 +2,19 @@
 
 All notable public changes are documented here.
 
+## 0.9.0a8 — development
+
+### Suggested work with bounded autonomous attempts
+
+- select one attributable active goal against genuine alternatives and canonical `NO_OP`;
+- emit a concrete work suggestion tied to a durable trigger digest;
+- autonomously attempt one create-only private local evidence audit through the existing typed executor;
+- verify exact artifact bytes and link suggestion, decision, action, outcome, and presentation receipts;
+- rotate toward the least-attempted active goal after a new trusted source-state token;
+- suppress unchanged duplicate wakes and serialize concurrent workers to one attempt/message;
+- expose redacted work-autonomy counts and latest verified-attempt status;
+- keep shell, network, browser, publication, financial, credential, destructive, and irreversible requested effects disabled.
+
 ## 0.9.0a3 — development
 
 ### Atomic constitution root hardening

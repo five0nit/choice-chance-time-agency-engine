@@ -531,9 +531,16 @@ class HermesPluginTestCase(unittest.TestCase):
                     },
                 )
                 status = json.loads(context.tools["cct_status"]({}))
-                self.assertEqual(status["plugin_version"], "0.9.0a7")
+                self.assertEqual(status["plugin_version"], "0.9.0a8")
                 self.assertEqual(status["status"]["identity"], "Public-Test-CCT")
                 self.assertEqual(status["autonomy"]["authority"]["level"], 1)
+                self.assertEqual(status["work_autonomy"]["suggestions"], 0)
+                self.assertEqual(status["work_autonomy"]["attempts"], 0)
+                self.assertFalse(
+                    status["work_autonomy"][
+                        "requested_external_effect_execution_enabled"
+                    ]
+                )
                 json.loads(
                     context.tools["cct_form_goal"](
                         {
