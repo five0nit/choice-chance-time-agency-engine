@@ -41,6 +41,15 @@ jobs:
           /usr/bin/python3 -c "import sys,tomllib; print(sys.version); assert sys.version_info >= (3,11)"
           bwrap --version
           python -c "import subprocess; from cct_agent.owner_delivery_local import _host_binary, BWRAP, PRLIMIT, PYTHON; print([str(_host_binary(p)) for p in (BWRAP, PRLIMIT, PYTHON)]); assert '--disable-userns' in subprocess.check_output([str(BWRAP),'--help'],text=True)"
+      - name: Permit namespaces for trusted CI Bubblewrap only
+        # Ubuntu's unprivileged_userns profile strips the namespace-local
+        # capabilities required to initialize an isolated loopback device.
+        # Allow this root-owned binary, not all processes; keep AppArmor on.
+        # CCT's no-network/seccomp/nested-namespace controls remain unchanged.
+        run: |
+          python -c "import os,pathlib; p=pathlib.Path(os.environ['RUNNER_TEMP'])/'cct-ci-bwrap'; p.write_text('abi <abi/4.0>,\ninclude <tunables/global>\nprofile cct_ci_bwrap /usr/bin/bwrap flags=(unconfined) {\n  userns,\n}\n')"
+          sudo apparmor_parser -r "$RUNNER_TEMP/cct-ci-bwrap"
+          /usr/bin/bwrap --unshare-all --die-with-parent --new-session --disable-userns --assert-userns-disabled --ro-bind /usr /usr --ro-bind /lib /lib --ro-bind /lib64 /lib64 --proc /proc --dev /dev --tmpfs /tmp --clearenv --setenv PATH /usr/bin:/bin -- /usr/bin/python3 -I -c "import tomllib; print('isolated Python/TOML smoke passed')"
       - name: Install project and QA tools
         run: python -m pip install -e '.[test,firebase]' ruff build twine
       - name: Lint
