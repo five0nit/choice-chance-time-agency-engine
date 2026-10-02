@@ -16,11 +16,12 @@ include firestore.indexes.json
 include firestore.rules
 recursive-include config *.json
 recursive-include docs *.md
-recursive-include examples *.json
-recursive-include firebase *.css *.html *.js *.json *.mjs
+recursive-include examples *.json *.py
+recursive-include firebase *.css *.html *.js *.json *.mjs *.py
 prune firebase/hosting/node_modules
 prune firebase/hosting/dist
 recursive-include scripts *.py
 recursive-include hermes_plugin *.yaml
 recursive-include systemd *.in
+recursive-include integrations/systemd *.service
 recursive-include tests *.py
