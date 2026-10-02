@@ -32,14 +32,13 @@ jobs:
           curl --fail --location --retry 2 --output "$RUNNER_TEMP/bubblewrap.tar.xz" https://github.com/containers/bubblewrap/releases/download/v0.11.0/bubblewrap-0.11.0.tar.xz
           python -c "import os,pathlib,hashlib; p=pathlib.Path(os.environ['RUNNER_TEMP'])/'bubblewrap.tar.xz'; assert hashlib.sha256(p.read_bytes()).hexdigest() == '988fd6b232dafa04b8b8198723efeaccdb3c6aa9c1c7936219d5791a8b7a8646'"
           tar -xJf "$RUNNER_TEMP/bubblewrap.tar.xz" -C "$RUNNER_TEMP"
-          meson setup "$RUNNER_TEMP/bwrap-build" "$RUNNER_TEMP/bubblewrap-0.11.0" --prefix "$RUNNER_TEMP/bwrap" -Dman=disabled -Dtests=false -Dselinux=disabled -Dbash_completion=disabled -Dzsh_completion=disabled
+          meson setup "$RUNNER_TEMP/bwrap-build" "$RUNNER_TEMP/bubblewrap-0.11.0" --prefix /usr -Dman=disabled -Dtests=false -Dselinux=disabled -Dbash_completion=disabled -Dzsh_completion=disabled
           meson compile -C "$RUNNER_TEMP/bwrap-build"
-          meson install -C "$RUNNER_TEMP/bwrap-build"
-          python -c "import os,pathlib; print(os.environ['RUNNER_TEMP']+'/bwrap/bin', file=pathlib.Path(os.environ['GITHUB_PATH']).open('a'))"
+          sudo meson install -C "$RUNNER_TEMP/bwrap-build"
       - name: Verify required sandbox option
         run: |
           bwrap --version
-          python -c "import subprocess; assert '--disable-userns' in subprocess.check_output(['bwrap','--help'],text=True)"
+          python -c "import subprocess; from cct_agent.owner_delivery_local import _host_binary, BWRAP, PRLIMIT, PYTHON; print([str(_host_binary(p)) for p in (BWRAP, PRLIMIT, PYTHON)]); assert '--disable-userns' in subprocess.check_output([str(BWRAP),'--help'],text=True)"
       - name: Install project and QA tools
         run: python -m pip install -e '.[test,firebase]' ruff build twine
       - name: Lint
