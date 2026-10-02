@@ -90,7 +90,7 @@ def test_cli_uses_shared_proactive_wake_counter(tmp_path: Path) -> None:
         "cct_agent.recurrent.runtime_provenance",
         return_value={
             "module_root": str(tmp_path / "site-packages"),
-            "package_version": "0.9.0a8",
+            "package_version": "0.9.0a10",
         },
     ):
         assert (
@@ -107,7 +107,7 @@ def test_cli_uses_shared_proactive_wake_counter(tmp_path: Path) -> None:
                     "--expected-module-root",
                     str(tmp_path / "site-packages"),
                     "--expected-package-version",
-                    "0.9.0a8",
+                    "0.9.0a10",
                     "--time-bucket",
                     "2026-08-25",
                     "--message-only",

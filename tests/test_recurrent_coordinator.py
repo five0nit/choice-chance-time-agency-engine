@@ -9,6 +9,8 @@ import pytest
 
 import cct_agent
 from cct_agent.kernel import AgencyKernel, NO_OP_ID, default_constitution
+from cct_agent.opportunity_handoff import OpportunityTaskHandoff
+from cct_agent.opportunity_initiative import OpportunityInitiative
 from cct_agent.principal import PrincipalDirective, PrincipalModel, PrincipalProfile
 from cct_agent.pursuit_dialogue import Pursuit, PursuitDialogue, PursuitPortfolio
 from cct_agent.recurrent import (
@@ -45,6 +47,24 @@ def signed_receipts() -> tuple[SelfGoalInputReceipt, ...]:
             strict=True,
         )
     )
+
+
+def signed_interest_receipts(
+    opportunity_id: str, interest_sha256: str
+) -> tuple[SelfGoalInputReceipt, ...]:
+    rows = list(signed_receipts()[:3])
+    rows.append(
+        SelfGoalInputReceipt.sign(
+            receipt_id="recurrent-opportunity",
+            kind="opportunity",
+            subject_id=opportunity_id,
+            content_sha256=interest_sha256,
+            issued_by="host_adapter",
+            semantic_taint=False,
+            secret=SECRET,
+        )
+    )
+    return tuple(rows)
 
 
 def paths(tmp_path: Path) -> RecurrentPaths:
@@ -150,6 +170,49 @@ def initialize_governance(rows: RecurrentPaths) -> EventStore:
     return store
 
 
+def register_accepted_interest(store: EventStore) -> tuple[str, str, str]:
+    opportunity_id = "recurrent-accepted-interest"
+    registration = store.append(
+        "autonomy.opportunity.registered",
+        {
+            "schema_version": 1,
+            "opportunity_id": opportunity_id,
+            "status": "open",
+            "source_authority": "self",
+            "external_effects": 0,
+        },
+    )
+    principal = PrincipalModel(store).status()
+    presentation = store.append(
+        "opportunity.initiative.completed",
+        {
+            "schema_version": 1,
+            "opportunity_id": opportunity_id,
+            "registration_event_id": registration.event_id,
+            "emitted": True,
+            "principal": {
+                "principal_id": "mike",
+                "profile_digest": principal["profile_digest"],
+            },
+            "external_effects": 0,
+        },
+    )
+    feedback = OpportunityInitiative(store).record_feedback(
+        feedback_id="recurrent-accepted-interest-feedback",
+        opportunity_id=opportunity_id,
+        principal_id="mike",
+        decision="INTERESTED",
+        evidence=("host:recurrent-accepted-interest",),
+        source_authority="host_adapter",
+    )
+    assert feedback["presentation_event_id"] == presentation.event_id
+    binding = OpportunityTaskHandoff(store, principal_id="mike").inspect_interest(
+        opportunity_id=opportunity_id,
+        feedback_event_id=str(feedback["event_id"]),
+    )
+    return opportunity_id, str(feedback["event_id"]), binding.digest
+
+
 def coordinator(rows: RecurrentPaths) -> InstalledRecurrentCoordinator:
     return InstalledRecurrentCoordinator(
         paths=rows,
@@ -232,6 +295,57 @@ def test_installed_recurrent_coordinator_resumes_full_self_goal_and_exposes_dial
     assert store.verify_chain()["valid"] is True
     assert (rows.deployment_sink / "releases" / "receipt.txt").is_file()
     assert (rows.outbox_root / "recurrent-wake-slice20.json").is_file()
+
+
+def test_installed_recurrent_coordinator_wakes_signed_accepted_interest_once(
+    tmp_path: Path,
+) -> None:
+    rows = paths(tmp_path)
+    store = initialize_governance(rows)
+    opportunity_id, feedback_event_id, interest_digest = register_accepted_interest(store)
+    wake = RecurrentWake(
+        id="wake-accepted-interest",
+        seed=0,
+        expires_at=EXPIRY,
+        time_bucket="2099-08-25",
+        receipts=signed_interest_receipts(opportunity_id, interest_digest),
+    )
+
+    remaining_faults = {"command-effect"}
+
+    def fault_hook(stage_id: str, _receipt_event_id: str) -> None:
+        if stage_id in remaining_faults:
+            remaining_faults.remove(stage_id)
+            raise SystemExit("crash-after-accepted-interest-command-effect")
+
+    with pytest.raises(SystemExit, match="crash-after-accepted-interest-command-effect"):
+        coordinator(rows).run(wake, fault_hook=fault_hook)
+
+    first = coordinator(rows).run(wake)
+    duplicate = coordinator(rows).run(wake)
+
+    assert remaining_faults == set()
+    assert first["status"] == "completed"
+    assert first["interest_task_wake"]["status"] == "verified-completed"
+    assert first["interest_task_wake"]["executed"] is True
+    assert duplicate["status"] == "completed"
+    assert duplicate["replayed"] is True
+    assert duplicate["interest_task_wake"]["emit"] is False
+    assert len(store.events("opportunity.initiative.task_wake.configuration.installed")) == 1
+    assert len(store.events("opportunity.initiative.task_wake.claimed")) == 1
+    assert len(store.events("opportunity.initiative.task_wake.completed")) == 1
+    assert len(store.events("opportunity.initiative.task_handoff.completed")) == 1
+    assert len(store.events("command.execution.readback_adopted")) == 1
+    assert len(store.events("deployment.local_fake.completed")) == 1
+    assert len(store.events("public_action.fake_sink.completed")) == 1
+    terminal = store.events("opportunity.initiative.task_handoff.completed")[0]
+    assert terminal.payload["feedback_event_id"] == feedback_event_id
+    assert terminal.payload["interest_granted_execution_authority"] is False
+    assert terminal.payload["execution_authority_source"] == (
+        "separate_host_policy_capability_lease"
+    )
+    assert terminal.payload["external_effects"] == 0
+    assert store.verify_chain()["valid"] is True
 
 
 def test_private_wake_loader_and_runtime_provenance_fail_closed(tmp_path: Path) -> None:

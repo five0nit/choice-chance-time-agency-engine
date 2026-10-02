@@ -16,8 +16,10 @@ from cct_agent import (
     AutonomyEngine,
     CapabilityRegistry,
     CapabilityRequest,
+    ClarificationDialogue,
     CognitiveCycle,
     EventStore,
+    HumanNarrative,
     Observation,
     Opportunity,
     OutcomeVerifierRegistry,
@@ -30,14 +32,26 @@ from cct_agent import (
 )
 from cct_agent.metacognition import MetacognitiveMonitor
 from cct_agent.canary_mediation import CANARY_EFFECT_TOOLS, build_canary_outcome_registry
+from cct_agent.clarification_dialogue import clarification_request_from_template
 from cct_agent.gateway_replies import GatewayPursuitReplyAdapter
+from cct_agent.interest_wake import interest_task_wake_status
 from cct_agent.mediation import ToolExecutionMediator, parse_mediated_tools
 from cct_agent.models import options_from_dicts
+from cct_agent.operator_authenticated_access import (
+    OperatorAuthenticatedAccessScaffold,
+    OperatorAuthenticatedAccessTarget,
+)
+from cct_agent.operator_authenticated_session_bridge import (
+    OPERATOR_AUTHENTICATED_SESSION_TOOL,
+    HermesAuthenticatedSessionDriver,
+    OperatorAuthenticatedSessionBridge,
+)
 from cct_agent.self_model import SelfModel
+from cct_agent.standing_worker import run_from_config, status_from_config
 from cct_agent.work_autonomy import work_autonomy_status
 
 
-PLUGIN_VERSION = "0.9.0a8"
+PLUGIN_VERSION = "0.9.0a22"
 CONTEXT_CHAR_BUDGET = 6000
 _PLUGIN_IDENTITY: str | None = None
 _PLUGIN_TEAM_SYNC_SOURCE: str | None = None
@@ -283,6 +297,7 @@ def _status_handler(params: dict[str, Any], **kwargs: Any) -> str:
             "proactive": ProactiveRunner(kernel.store).status(),
             "autonomy": _autonomy().status(),
             "work_autonomy": work_autonomy_status(kernel.store),
+            "interest_task_wake": interest_task_wake_status(kernel.store),
             "personal_agency": {
                 "principal": PrincipalModel(kernel.store).status(),
                 "capabilities": CapabilityRegistry(kernel.store).status(),
@@ -301,6 +316,23 @@ def _status_handler(params: dict[str, Any], **kwargs: Any) -> str:
             },
         }
     )
+
+
+def _human_summary_handler(params: dict[str, Any], **kwargs: Any) -> str:
+    """Return a read-only payload-safe operator projection."""
+
+    del kwargs
+    narrative = HumanNarrative(EventStore(_db_path()))
+    view = str(params.get("view", "status"))
+    if view == "status":
+        result = narrative.status()
+    elif view == "latest":
+        result = narrative.latest()
+    elif view == "digest":
+        result = narrative.digest(limit=int(params.get("limit", 8)))
+    else:  # schema validation normally rejects this first
+        raise ValueError("view is not an allowed value")
+    return _json({"success": True, **result})
 
 
 def _form_goal_handler(params: dict[str, Any], **kwargs: Any) -> str:
@@ -526,6 +558,39 @@ def _workspace_inspect_handler(params: dict[str, Any], **kwargs: Any) -> str:
 def _autonomy_status_handler(params: dict[str, Any], **kwargs: Any) -> str:
     del params, kwargs
     return _json({"success": True, "autonomy": _autonomy().status()})
+
+
+def _clarification_request_handler(params: dict[str, Any], **kwargs: Any) -> str:
+    """Register one immutable host-template clarification without arbitrary prose."""
+
+    del kwargs
+    kernel = _kernel()
+    store = kernel.store
+    task_id = str(params["task_id"])
+    goal = kernel.goal(task_id)
+    if goal is None or goal.status != "active":
+        raise ValueError("clarification template requires an active CCT goal task")
+    request = clarification_request_from_template(
+        template_id=str(params["template_id"]),
+        request_id=str(params["request_id"]),
+        revision=int(params["request_revision"]),
+        task_id=task_id,
+        task_revision=int(params["task_revision"]),
+        task_sha256=str(params["task_sha256"]),
+        expires_at=str(params["expires_at"]),
+        resume_plan_id=str(params["resume_plan_id"]),
+        resume_plan_sha256=str(params["resume_plan_sha256"]),
+        evidence=tuple(str(item) for item in params["evidence"]),
+    )
+    result = ClarificationDialogue(store).register(request)
+    return _json(
+        {
+            "success": True,
+            "clarification": result,
+            "question_content_source": "immutable_host_template",
+            "execution_authority_granted": False,
+        }
+    )
 
 
 def _opportunity_propose_handler(params: dict[str, Any], **kwargs: Any) -> str:
@@ -919,6 +984,43 @@ def _bounded_string_list(
     }
 
 
+def _authenticated_access_targets(
+    value: object,
+) -> tuple[OperatorAuthenticatedAccessTarget, ...]:
+    if not isinstance(value, list) or len(value) > 16:
+        raise ValueError("authenticated_access_targets must be an array of at most 16 items")
+    fields = {
+        "id",
+        "target_kind",
+        "route",
+        "app_id",
+        "consumer_id",
+        "owner_principal_id",
+        "allowed_purposes",
+    }
+    targets: list[OperatorAuthenticatedAccessTarget] = []
+    for row in value:
+        if not isinstance(row, dict) or set(row) != fields:
+            raise ValueError("authenticated access targets require exact fields")
+        purposes = row["allowed_purposes"]
+        if not isinstance(purposes, list):
+            raise ValueError("authenticated access allowed_purposes must be an array")
+        targets.append(
+            OperatorAuthenticatedAccessTarget(
+                id=row["id"],
+                target_kind=row["target_kind"],
+                route=row["route"],
+                app_id=row["app_id"],
+                consumer_id=row["consumer_id"],
+                owner_principal_id=row["owner_principal_id"],
+                allowed_purposes=tuple(purposes),
+            )
+        )
+    if len({target.id for target in targets}) != len(targets):
+        raise ValueError("authenticated access target IDs must be unique")
+    return tuple(targets)
+
+
 def _tool_execution_callback(
     mediator: ToolExecutionMediator,
 ) -> Any:
@@ -928,11 +1030,17 @@ def _tool_execution_callback(
     return callback
 
 
-def _outcome_verifier_registry(store: EventStore) -> OutcomeVerifierRegistry:
-    """Build immutable host-owned canary readback registrations."""
+def _outcome_verifier_registry(
+    store: EventStore,
+    bridge: OperatorAuthenticatedSessionBridge | None = None,
+) -> OutcomeVerifierRegistry:
+    """Build immutable host-owned canary and authenticated-session verifiers."""
 
     try:
-        return build_canary_outcome_registry(store)
+        registry = build_canary_outcome_registry(store)
+        if bridge is not None:
+            bridge.register_outcome_verifier(registry)
+        return registry
     except (TypeError, ValueError):
         # A malformed/unavailable host store must never create permissive
         # verifier authority. Empty registry makes every ticketed effect deny.
@@ -945,6 +1053,9 @@ def register(ctx: Any) -> None:
     global _PLUGIN_IDENTITY, _PLUGIN_TEAM_SYNC_SOURCE, _PLUGIN_INSPECTION_ROOT
     mediated_tools = frozenset[str]()
     mediation_configuration_valid = True
+    authenticated_access_targets: tuple[OperatorAuthenticatedAccessTarget, ...] = ()
+    browser_real_profile_enabled = False
+    standing_autonomy_config: Path | None = None
     get_config = getattr(ctx, "get_config", None)
     if callable(get_config):
         configured_identity = get_config("identity", "CCT-Agent")
@@ -953,8 +1064,27 @@ def register(ctx: Any) -> None:
         configured_mediated_tools = get_config(
             "mediated_tools", sorted(CANARY_EFFECT_TOOLS)
         )
+        configured_access_targets = get_config("authenticated_access_targets", [])
+        configured_browser_profile = get_config(
+            "authenticated_access_browser_real_profile_enabled", False
+        )
+        configured_standing_autonomy = get_config("standing_autonomy_config", "")
         try:
             mediated_tools = parse_mediated_tools(configured_mediated_tools)
+            authenticated_access_targets = _authenticated_access_targets(
+                configured_access_targets
+            )
+            if not isinstance(configured_browser_profile, bool):
+                raise ValueError(
+                    "authenticated_access_browser_real_profile_enabled must be boolean"
+                )
+            browser_real_profile_enabled = configured_browser_profile
+            if not isinstance(configured_standing_autonomy, str):
+                raise ValueError("standing_autonomy_config must be a string")
+            if configured_standing_autonomy.strip():
+                standing_autonomy_config = Path(
+                    configured_standing_autonomy.strip()
+                ).expanduser().absolute()
         except ValueError:
             # Hermes isolates register() failures and would continue with no
             # middleware. Keep an invalid explicit policy installed deny-all.
@@ -967,6 +1097,50 @@ def register(ctx: Any) -> None:
     # Establish the immutable constitution before any independently callable
     # subsystem can append its first event.
     kernel = _kernel()
+    standing_autonomy_ready = False
+    standing_profile_root = Path(
+        os.getenv("HERMES_HOME", str(Path.home() / ".hermes"))
+    ).expanduser().absolute()
+    if standing_autonomy_config is not None:
+        try:
+            status_from_config(
+                profile_root=standing_profile_root,
+                config_path=standing_autonomy_config,
+            )
+            standing_autonomy_ready = True
+        except Exception:
+            # A malformed, stale, or unbound standing policy suppresses only its
+            # conditional tools. Baseline CCT remains available and no effect runs.
+            standing_autonomy_ready = False
+    authenticated_access_scaffold: OperatorAuthenticatedAccessScaffold | None = None
+    authenticated_session_bridge: OperatorAuthenticatedSessionBridge | None = None
+    if authenticated_access_targets:
+        dispatch_tool = getattr(ctx, "dispatch_tool", None)
+        if not callable(dispatch_tool):
+            mediation_configuration_valid = False
+        else:
+            try:
+                authenticated_access_scaffold = OperatorAuthenticatedAccessScaffold(
+                    kernel.store,
+                    targets=authenticated_access_targets,
+                )
+                authenticated_session_bridge = OperatorAuthenticatedSessionBridge(
+                    kernel.store,
+                    authenticated_access_scaffold,
+                    HermesAuthenticatedSessionDriver(
+                        dispatch_tool,
+                        browser_real_profile_enabled=browser_real_profile_enabled,
+                    ),
+                )
+            except (TypeError, ValueError):
+                authenticated_access_scaffold = None
+                authenticated_session_bridge = None
+                mediation_configuration_valid = False
+    outcome_verifiers = (
+        _outcome_verifier_registry(kernel.store, authenticated_session_bridge)
+        if authenticated_session_bridge is not None
+        else _outcome_verifier_registry(kernel.store)
+    )
     ctx.register_middleware(
         "tool_execution",
         _tool_execution_callback(
@@ -974,7 +1148,7 @@ def register(ctx: Any) -> None:
                 kernel.store,
                 mediated_tools,
                 configuration_valid=mediation_configuration_valid,
-                outcome_verifiers=_outcome_verifier_registry(kernel.store),
+                outcome_verifiers=outcome_verifiers,
             )
         ),
     )
@@ -988,6 +1162,211 @@ def register(ctx: Any) -> None:
             definition["name"], parameters, definition["handler"]
         )
         native_register_tool(**definition)
+
+    digest_schema = {
+        **_bounded_string(64),
+        "pattern": r"^[0-9a-f]{64}$",
+    }
+    if authenticated_access_scaffold is not None:
+        register_tool(
+            name="cct_authenticated_access_preview",
+            toolset="cct_agency",
+            schema={
+                "name": "cct_authenticated_access_preview",
+                "description": (
+                    "Preview exact hashes for a zero-effect authenticated-access "
+                    "preparation from one verified opaque credential receipt."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "target_id": _bounded_string(160),
+                        "credential_receipt_event_id": _bounded_string(160),
+                        "purpose": _bounded_string(160),
+                        "action_scope_sha256": digest_schema,
+                    },
+                    "required": [
+                        "target_id",
+                        "credential_receipt_event_id",
+                        "purpose",
+                        "action_scope_sha256",
+                    ],
+                    "additionalProperties": False,
+                },
+            },
+            handler=lambda params, **_kwargs: _json(
+                asdict(authenticated_access_scaffold.preview(**params))
+            ),
+            description="Preview exact authenticated-access preparation hashes.",
+        )
+        register_tool(
+            name="cct_authenticated_access_prepare",
+            toolset="cct_agency",
+            schema={
+                "name": "cct_authenticated_access_prepare",
+                "description": (
+                    "Prepare a zero-effect authenticated browser/native-session envelope "
+                    "from one independently verified opaque credential receipt."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "operation_id": _bounded_string(160),
+                        "target_id": _bounded_string(160),
+                        "credential_receipt_event_id": _bounded_string(160),
+                        "purpose": _bounded_string(160),
+                        "action_scope_sha256": digest_schema,
+                        "expected_target_spec_sha256": digest_schema,
+                        "expected_credential_receipt_sha256": digest_schema,
+                        "expected_preview_sha256": digest_schema,
+                    },
+                    "required": [
+                        "operation_id",
+                        "target_id",
+                        "credential_receipt_event_id",
+                        "purpose",
+                        "action_scope_sha256",
+                        "expected_target_spec_sha256",
+                        "expected_credential_receipt_sha256",
+                        "expected_preview_sha256",
+                    ],
+                    "additionalProperties": False,
+                },
+            },
+            handler=lambda params, **_kwargs: authenticated_access_scaffold.prepare(
+                params
+            ),
+            description="Prepare a verified authenticated-session handoff without action.",
+        )
+
+    if authenticated_session_bridge is not None:
+        register_tool(
+            name="cct_authenticated_session_preview",
+            toolset="cct_agency",
+            schema={
+                "name": "cct_authenticated_session_preview",
+                "description": (
+                    "Preview the exact separately ticketed session-dispatch arguments "
+                    "for one verified authenticated-access preparation."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "prepared_event_id": _bounded_string(160),
+                    },
+                    "required": ["prepared_event_id"],
+                    "additionalProperties": False,
+                },
+            },
+            handler=lambda params, **_kwargs: _json(
+                asdict(authenticated_session_bridge.preview(**params))
+            ),
+            description="Preview exact authenticated-session ticket arguments.",
+        )
+
+    if (
+        authenticated_session_bridge is not None
+        and OPERATOR_AUTHENTICATED_SESSION_TOOL in mediated_tools
+    ):
+        register_tool(
+            name=OPERATOR_AUTHENTICATED_SESSION_TOOL,
+            toolset="cct_agency",
+            schema={
+                "name": OPERATOR_AUTHENTICATED_SESSION_TOOL,
+                "description": (
+                    "Dispatch one fixed, ticketed browser or native-session attachment "
+                    "probe from a verified CCT preparation. Caller cannot supply code, "
+                    "URLs, UI actions, coordinates, text, or secrets."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "execution_ticket_id": _bounded_string(160),
+                        "prepared_event_id": _bounded_string(160),
+                        "expected_prepared_sha256": digest_schema,
+                        "expected_target_spec_sha256": digest_schema,
+                        "expected_action_scope_sha256": digest_schema,
+                        "expected_preview_sha256": digest_schema,
+                        "verifier_id": _bounded_string(160),
+                    },
+                    "required": [
+                        "execution_ticket_id",
+                        "prepared_event_id",
+                        "expected_prepared_sha256",
+                        "expected_target_spec_sha256",
+                        "expected_action_scope_sha256",
+                        "expected_preview_sha256",
+                        "verifier_id",
+                    ],
+                    "additionalProperties": False,
+                },
+            },
+            handler=lambda params, **_kwargs: authenticated_session_bridge.execute(
+                params
+            ),
+            description="Execute one CCT-mediated fixed authenticated-session probe.",
+        )
+
+    if standing_autonomy_ready and standing_autonomy_config is not None:
+        register_tool(
+            name="cct_standing_autonomy_status",
+            toolset="cct_agency",
+            schema={
+                "name": "cct_standing_autonomy_status",
+                "description": (
+                    "Inspect Mike's operator-endorsed standing authority, earned tier, "
+                    "registered actions, live lease budget, and kill switch."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": False,
+                },
+            },
+            handler=lambda _params, **_kwargs: _json(
+                status_from_config(
+                    profile_root=standing_profile_root,
+                    config_path=standing_autonomy_config,
+                )
+            ),
+            description="Inspect active standing-autonomy authority and receipts.",
+        )
+        register_tool(
+            name="cct_standing_autonomy_run",
+            toolset="cct_agency",
+            schema={
+                "name": "cct_standing_autonomy_run",
+                "description": (
+                    "Select and execute one host-registered beneficial action under Mike's "
+                    "standing authority. Caller supplies no command, path, secret, budget, "
+                    "or effect parameters."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "run_id": {
+                            **_bounded_string(160),
+                            "pattern": r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$",
+                        },
+                        "action_id": {
+                            **_bounded_string(160),
+                            "pattern": r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$",
+                        },
+                    },
+                    "required": ["run_id"],
+                    "additionalProperties": False,
+                },
+            },
+            handler=lambda params, **_kwargs: _json(
+                run_from_config(
+                    profile_root=standing_profile_root,
+                    config_path=standing_autonomy_config,
+                    run_id=params["run_id"],
+                    action_id=params.get("action_id"),
+                )
+            ),
+            description="Run one exact registered action without per-action approval.",
+        )
 
     register_tool(
         name="cct_status",
@@ -1005,6 +1384,32 @@ def register(ctx: Any) -> None:
         description="Inspect Choice-Chance-Time and cognition state.",
     )
     register_tool(
+        name="cct_human_summary",
+        toolset="cct_agency",
+        schema={
+            "name": "cct_human_summary",
+            "description": (
+                "Preferred plain-language CCT status, latest-event explanation, or bounded "
+                "activity digest. Returns fixed operator vocabulary and exact event references "
+                "without raw event payloads."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "view": {
+                        "type": "string",
+                        "enum": ["status", "latest", "digest"],
+                    },
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 50},
+                },
+                "required": ["view"],
+                "additionalProperties": False,
+            },
+        },
+        handler=_human_summary_handler,
+        description="Read deterministic human-first CCT narrative state.",
+    )
+    register_tool(
         name="cct_autonomy_status",
         toolset="cct_agency",
         schema={
@@ -1017,6 +1422,82 @@ def register(ctx: Any) -> None:
         },
         handler=_autonomy_status_handler,
         description="Inspect bounded autonomous local-work state.",
+    )
+    register_tool(
+        name="cct_clarification_request",
+        toolset="cct_agency",
+        schema={
+            "name": "cct_clarification_request",
+            "description": (
+                "Create one important clarification from immutable host-owned templates. "
+                "The model selects only a template and exact task/plan bindings; it cannot "
+                "supply question prose, answers, or effect authority."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "template_id": {
+                        "type": "string",
+                        "enum": [
+                            "important-outcome",
+                            "first-effect-class",
+                            "public-effect-envelope",
+                            "credential-handoff",
+                            "financial-risk-posture",
+                        ],
+                    },
+                    "request_id": {
+                        **_bounded_string(160),
+                        "pattern": r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$",
+                    },
+                    "request_revision": {"type": "integer", "minimum": 1},
+                    "task_id": {
+                        **_bounded_string(160),
+                        "pattern": r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$",
+                    },
+                    "task_revision": {"type": "integer", "minimum": 1},
+                    "task_sha256": {
+                        **_bounded_string(64),
+                        "pattern": r"^[0-9a-f]{64}$",
+                    },
+                    "expires_at": _bounded_string(64),
+                    "resume_plan_id": {
+                        **_bounded_string(160),
+                        "pattern": r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$",
+                    },
+                    "resume_plan_sha256": {
+                        **_bounded_string(64),
+                        "pattern": r"^[0-9a-f]{64}$",
+                    },
+                    "evidence": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 7,
+                        "items": {
+                            "type": "string",
+                            "minLength": 3,
+                            "maxLength": 400,
+                            "pattern": r"^[A-Za-z][A-Za-z0-9+.-]*:[^\s]{1,398}$",
+                        },
+                    },
+                },
+                "required": [
+                    "template_id",
+                    "request_id",
+                    "request_revision",
+                    "task_id",
+                    "task_revision",
+                    "task_sha256",
+                    "expires_at",
+                    "resume_plan_id",
+                    "resume_plan_sha256",
+                    "evidence",
+                ],
+                "additionalProperties": False,
+            },
+        },
+        handler=_clarification_request_handler,
+        description="Register an immutable host-template clarification without authority.",
     )
     register_tool(
         name="cct_opportunity_propose",

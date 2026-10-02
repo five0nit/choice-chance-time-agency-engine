@@ -1,0 +1,26 @@
+{
+  "name": "cctae-firebase-control-plane",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test:builds:browser": "firebase emulators:exec --only firestore --project demo-cctae-control \"node tests/builds-browser-qa.mjs\"",
+    "test:browser": "firebase emulators:exec --only firestore --project demo-cctae-control \"node tests/browser-qa.mjs\"",
+    "test": "node --test tests/static-contract.test.mjs tests/workspace-model.test.mjs tests/owner-connection.test.mjs tests/executor.test.mjs tests/owner-delivery.test.mjs tests/owner-builds.test.mjs tests/discovery-answer-save.test.mjs",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-cctae-control \"node --test tests/firestore-rules.test.mjs tests/workspace-rules.test.mjs tests/executor-rules.test.mjs tests/owner-delivery-rules.test.mjs tests/owner-builds-rules.test.mjs\""
+  },
+  "dependencies": {
+    "firebase": "12.18.0"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "5.0.2",
+    "esbuild": "0.28.2"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.13.6"
+  }
+}

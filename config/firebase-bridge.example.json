@@ -1,0 +1,12 @@
+{
+  "schema_version": "cct.firebase_bridge.config.v1",
+  "project_id": "demo-cctae",
+  "database": "/path/to/profile/cct-agency/agency.sqlite",
+  "owner_email": "owner@example.invalid",
+  "owner_uid": "replace-with-owner-firebase-uid",
+  "principal_id": "mike",
+  "poll_seconds": 30,
+  "request_ttl_seconds": 180,
+  "claim_ttl_seconds": 60,
+  "runtime_directory": "/path/to/profile/runtime/cct-firebase-bridge"
+}

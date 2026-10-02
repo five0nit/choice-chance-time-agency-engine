@@ -12,6 +12,12 @@ TEXT_SUFFIXES = {
     "",
     ".cff",
     ".json",
+    ".html",
+    ".js",
+    ".mjs",
+    ".css",
+    ".rules",
+    ".service",
     ".md",
     ".py",
     ".toml",
@@ -23,6 +29,8 @@ SECRET_PATTERNS = {
     "openai_key": re.compile(r"sk-(?:proj-)?[A-Za-z0-9_-]{20,}"),
     "github_token": re.compile(r"gh[pousr]_[A-Za-z0-9]{20,}"),
     "google_token": re.compile(r"ya29\.[A-Za-z0-9_-]{20,}"),
+    "google_api_key": re.compile(r"AIza[A-Za-z0-9_-]{30,}"),
+    "telegram_bot_token": re.compile(r"\b\d{6,}:[A-Za-z0-9_-]{30,}"),
     "private_key": re.compile(
         r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"
     ),
@@ -71,6 +79,7 @@ def candidate_files() -> list[Path]:
 def main() -> int:
     errors: list[str] = []
     files = candidate_files()
+    candidate_set = {path.resolve() for path in files}
 
     for path in files:
         display_path = path.relative_to(REPO_ROOT)
@@ -96,7 +105,7 @@ def main() -> int:
             if target.startswith(("http://", "https://", "#", "mailto:")):
                 continue
             relative = target.split("#", 1)[0]
-            if relative and not (path.parent / relative).resolve().exists():
+            if relative and (path.parent / relative).resolve() not in candidate_set:
                 errors.append(f"broken local link: {display_path} -> {target}")
 
     if errors:

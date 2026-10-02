@@ -5,8 +5,8 @@ type: software
 authors:
   - family-names: Costea
     given-names: Michael
-version: 0.7.0
-date-released: 2026-08-23
+version: 0.9.0a22
+date-released: 2026-10-02
 url: "https://github.com/five0nit/choice-chance-time-agency-engine"
 repository-code: "https://github.com/five0nit/choice-chance-time-agency-engine"
 license: MIT
@@ -14,7 +14,7 @@ abstract: >-
   A dependency-free Python architecture for persistent, replayable,
   reasons-responsive AI agency with bounded exploration, temporal evidence,
   proactive initiative, trusted sensors, reversible verified local execution,
-  and progressively earned authority.
+  and verified progress within explicit authority.
 keywords:
   - ai agents
   - agent governance

@@ -1,5 +1,5 @@
 name: cct-agency
-version: 0.9.0a8
+version: 0.9.0a22
 description: Choice-Chance-Time Agency Engine tools for verifiable, progressively earned autonomy.
 author: Michael Costea
 license: MIT
@@ -7,6 +7,7 @@ homepage: https://github.com/five0nit/choice-chance-time-agency-engine
 tags: [ai-agents, autonomy, governance, event-sourcing, hermes]
 provides_tools:
   - cct_status
+  - cct_human_summary
   - cct_autonomy_status
   - cct_opportunity_propose
   - cct_autonomy_run
@@ -27,6 +28,12 @@ provides_tools:
   - cct_proactive_status
   - cct_topic_update
   - cct_proactive_think
+  - cct_authenticated_access_preview
+  - cct_authenticated_access_prepare
+  - cct_authenticated_session_preview
+  - operator_authenticated_session
+  - cct_standing_autonomy_status
+  - cct_standing_autonomy_run
 provides_hooks:
   - pre_gateway_dispatch
   - pre_llm_call
@@ -52,3 +59,17 @@ config_schema:
     description: Exact CCT real-canary effect identifiers denied unless a live ticket and canonical host readback both verify.
     items:
       type: str
+  authenticated_access_targets:
+    type: list
+    default: []
+    description: Host-owned exact browser/native session targets. Each item binds id, target_kind, route, app_id, consumer_id, owner_principal_id, and allowed_purposes.
+    items:
+      type: dict
+  authenticated_access_browser_real_profile_enabled:
+    type: bool
+    default: false
+    description: Host assertion that Hermes browser real-profile snapshot mode was explicitly enabled and verified; false returns AUTH_HANDOFF_REQUIRED without dispatch.
+  standing_autonomy_config:
+    type: str
+    default: ""
+    description: Optional absolute profile-owned mode-0600 standing-autonomy policy/action configuration. Invalid or absent configuration suppresses standing-autonomy tools.

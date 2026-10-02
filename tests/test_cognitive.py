@@ -212,6 +212,137 @@ class CognitiveTestCase(unittest.TestCase):
         self.assertEqual(snapshot["identity"], "cognitive-test")
         self.assertEqual(snapshot["prediction_count"], 1)
 
+    def test_later_explicit_capability_update_wins_over_older_resolution(self) -> None:
+        model = SelfModel(self.store, identity="cognitive-test")
+        model.declare_capability(
+            name="temporal_capability",
+            available=True,
+            confidence=0.5,
+            permission="competence-only",
+            evidence=("test:initial",),
+            logical_tick=1,
+        )
+        prediction = model.predict(
+            capability="temporal_capability",
+            predicted_success=0.5,
+            logical_tick=2,
+        )
+        model.record_result(
+            prediction_id=prediction["prediction_id"],
+            succeeded=True,
+            evidence=("test:resolved",),
+            logical_tick=3,
+        )
+        model.declare_capability(
+            name="temporal_capability",
+            available=True,
+            confidence=0.9,
+            permission="later-host-declaration",
+            evidence=("test:later",),
+            logical_tick=4,
+        )
+
+        capability = model.snapshot()["capabilities"]["temporal_capability"]
+        self.assertEqual(capability["confidence"], 0.9)
+        self.assertEqual(capability["permission"], "later-host-declaration")
+        self.assertEqual(capability["last_test_tick"], 4)
+
+    def test_idempotent_prediction_resolution_rejects_conflicting_replay(self) -> None:
+        model = SelfModel(self.store, identity="cognitive-test")
+        model.declare_capability(
+            name="receipt_bound_capability",
+            available=True,
+            confidence=0.5,
+            permission=SelfModel.COMPETENCE_ONLY_PERMISSION,
+            evidence=("test:capability",),
+            logical_tick=1,
+        )
+        prediction = model.predict_once(
+            prediction_id="pred_receipt_bound",
+            capability="receipt_bound_capability",
+            predicted_success=0.5,
+            logical_tick=2,
+            evidence=("test:prediction",),
+            source_run_id="run_receipt_bound",
+        )
+        first = model.record_result_once(
+            prediction_id=prediction["prediction_id"],
+            succeeded=True,
+            evidence=("event:verified-one",),
+            logical_tick=3,
+            source_run_id="run_receipt_bound",
+        )
+
+        with self.assertRaisesRegex(ValueError, "conflicts with existing receipt"):
+            model.record_result_once(
+                prediction_id=prediction["prediction_id"],
+                succeeded=True,
+                evidence=("event:changed-evidence",),
+                logical_tick=3,
+                source_run_id="run_receipt_bound",
+            )
+        with self.assertRaisesRegex(ValueError, "conflicts with existing receipt"):
+            model.record_result_once(
+                prediction_id=prediction["prediction_id"],
+                succeeded=True,
+                evidence=("event:verified-one",),
+                logical_tick=4,
+                source_run_id="run_receipt_bound",
+            )
+        self.assertTrue(first["created"])
+        self.assertEqual(len(self.store.events("self.prediction.resolved")), 1)
+
+    def test_self_model_projects_legacy_verified_autonomy_receipts_without_rewrite(
+        self,
+    ) -> None:
+        first = self.store.append(
+            "autonomy.run.completed",
+            {
+                "run_id": "legacy-success",
+                "capability": "verified_local_artifact",
+                "success": True,
+                "verified": True,
+                "receipt_count": 1,
+                "recovered_steps": 0,
+            },
+        )
+        second = self.store.append(
+            "autonomy.run.completed",
+            {
+                "run_id": "legacy-failure",
+                "capability": "verified_local_artifact",
+                "success": False,
+                "verified": False,
+                "receipt_count": 0,
+                "recovered_steps": 0,
+            },
+        )
+        before = list(self.store.export())
+
+        snapshot = SelfModel(self.store, identity="cognitive-test").snapshot()
+
+        capability = snapshot["capabilities"]["verified_local_artifact"]
+        self.assertEqual(
+            capability["permission"],
+            "competence_estimate_only_no_effect_authority",
+        )
+        self.assertEqual(capability["confidence"], 0.5)
+        self.assertEqual(
+            capability["receipt_projection"],
+            {
+                "samples": 2,
+                "verified_successes": 1,
+                "failures": 1,
+                "success_rate": 0.5,
+            },
+        )
+        self.assertEqual(
+            capability["evidence"],
+            [f"event:{first.event_id}", f"event:{second.event_id}"],
+        )
+        self.assertEqual(list(self.store.export()), before)
+        self.assertFalse(self.store.events("self.capability.updated"))
+
     def test_world_model_records_every_counterfactual(self) -> None:
         model = CounterfactualWorldModel(self.store, self.kernel)
         options = [
@@ -244,6 +375,118 @@ class CognitiveTestCase(unittest.TestCase):
         self.assertLess(state["valence"], 0.0)
         self.assertGreaterEqual(state["stability"], 0.0)
         self.assertLessEqual(state["stability"], 1.0)
+
+    def test_interoception_rejects_unknown_signal_names_before_persistence(
+        self,
+    ) -> None:
+        before = self.store.count()
+        with self.assertRaisesRegex(ValueError, "unknown interoceptive signals"):
+            InteroceptiveState(self.store).sample(
+                {
+                    "context_pressure": 0.2,
+                    "PRIVATE_PRODUCER_SIGNAL_NAME": 0.9,
+                },
+                logical_tick=1,
+            )
+        self.assertEqual(self.store.count(), before)
+        self.assertFalse(self.store.events("interoception.sampled"))
+
+    def test_interoception_modulates_attention_and_records_replayable_weights(
+        self,
+    ) -> None:
+        cycle = CognitiveCycle(
+            self.kernel,
+            workspace_capacity=2,
+            workspace_char_budget=256,
+        )
+        observations = [
+            Observation(
+                id="routine",
+                kind="routine",
+                summary="Routine high-salience work.",
+                source="test:routine",
+                confidence=1.0,
+                salience=1.0,
+                goal_relevance=1.0,
+                novelty=1.0,
+                urgency=0.0,
+                unresolved_conflict=0.0,
+                processing_cost=0.1,
+            ),
+            Observation(
+                id="repair",
+                kind="conflict",
+                summary="Resolve repeated high-error conflict.",
+                source="test:repair",
+                confidence=0.8,
+                salience=0.2,
+                goal_relevance=0.4,
+                novelty=0.1,
+                urgency=1.0,
+                unresolved_conflict=1.0,
+                processing_cost=0.1,
+            ),
+        ]
+        baseline = cycle.attention.regulatory_profile(None)
+        pressured = cycle.attention.regulatory_profile(
+            {
+                "signals": {
+                    "context_pressure": 1.0,
+                    "error_rate": 1.0,
+                    "goal_progress": 0.2,
+                    "unresolved_commitments": 1.0,
+                    "latency_pressure": 0.5,
+                },
+                "uncertainty": 0.6,
+                "stability": 0.6,
+                "event_id": "evt_regulation_fixture",
+            }
+        )
+        candidates = [
+            cycle._observation_item(observation, logical_tick=1)
+            for observation in observations
+        ]
+
+        baseline_selected = cycle.attention.select(candidates, profile=baseline)
+        pressured_selected = cycle.attention.select(candidates, profile=pressured)
+
+        self.assertEqual(baseline_selected[0].item.id, "routine")
+        self.assertEqual(pressured_selected[0].item.id, "repair")
+        self.assertEqual(len(pressured_selected), 1)
+        self.assertLessEqual(pressured["effective_capacity"], pressured["base_capacity"])
+        self.assertLessEqual(
+            pressured["effective_char_budget"], pressured["base_char_budget"]
+        )
+        self.assertEqual(
+            [item.as_payload() for item in pressured_selected],
+            [
+                item.as_payload()
+                for item in cycle.attention.select(candidates, profile=pressured)
+            ],
+        )
+
+        result = cycle.run(
+            observations=observations,
+            seed=7,
+            internal_signals={
+                "context_pressure": 1.0,
+                "error_rate": 1.0,
+                "goal_progress": 0.2,
+                "memory_integrity": 1.0,
+                "unresolved_commitments": 1.0,
+                "tool_availability": 1.0,
+                "prediction_error": 1.0,
+                "latency_pressure": 0.5,
+            },
+        )
+        receipt = result["workspace"]["attention_policy"]
+        self.assertEqual(result["workspace"]["items"][0]["id"], "repair")
+        self.assertEqual(receipt["effective_capacity"], 1)
+        self.assertEqual(
+            receipt["regulatory_event_id"], result["interoception"]["event_id"]
+        )
+        self.assertEqual(receipt["weights"], pressured["weights"])
+        self.assertTrue(self.store.verify_chain()["valid"])
 
     def test_cycle_recurrence_restart_and_source_distinction(self) -> None:
         cycle = CognitiveCycle(self.kernel, consolidation_interval=2)

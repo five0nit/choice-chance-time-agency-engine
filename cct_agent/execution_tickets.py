@@ -95,6 +95,150 @@ def _bounded_text(name: str, value: Any, *, maximum: int) -> str:
     return value.strip()
 
 
+def _kill_switch_status(events: list[Event]) -> dict[str, Any]:
+    active_trip: Event | None = None
+    latest_transition: Event | None = None
+    for event in events:
+        if event.kind == "operator.kill_switch.tripped":
+            active_trip = event
+            latest_transition = event
+        elif event.kind == "operator.kill_switch.cleared":
+            if (
+                active_trip is not None
+                and event.payload.get("active_trip_event_id") == active_trip.event_id
+            ):
+                active_trip = None
+                latest_transition = event
+    return {
+        "active": active_trip is not None,
+        "active_trip_event_id": active_trip.event_id if active_trip else None,
+        "active_trip_id": (
+            active_trip.payload.get("trip_id") if active_trip is not None else None
+        ),
+        "latest_transition_event_id": (
+            latest_transition.event_id if latest_transition is not None else None
+        ),
+        "model_clear_enabled": False,
+    }
+
+
+class GlobalKillSwitch:
+    """Durable host/operator emergency stop shared by every operator effect."""
+
+    def __init__(self, store: EventStore) -> None:
+        self.store = store
+
+    @staticmethod
+    def ensure_clear(events: list[Event]) -> None:
+        if _kill_switch_status(events)["active"]:
+            raise TicketAuthorityDenied("GLOBAL_KILL_SWITCH_ACTIVE")
+
+    def status(self) -> dict[str, Any]:
+        return _kill_switch_status(self.store.events())
+
+    def trip(
+        self,
+        *,
+        trip_id: str,
+        authority: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        identifier = _identifier("trip id", trip_id)
+        payload = {
+            "schema_version": 1,
+            "trip_id": identifier,
+            "authority": _authority(authority),
+            "reason": _bounded_text("kill-switch reason", reason, maximum=600),
+            "active": True,
+            "model_clear_enabled": False,
+        }
+        event, created = self.store.append_once_result(
+            "operator.kill_switch.tripped", identifier, payload
+        )
+        if canonical_json(event.payload) != canonical_json(payload):
+            raise ValueError(
+                f"logical key collision for operator.kill_switch.tripped:{identifier}"
+            )
+        return {
+            **event.payload,
+            **self.status(),
+            "event_id": event.event_id,
+            "created": created,
+        }
+
+    def clear(
+        self,
+        *,
+        clear_id: str,
+        authority: str,
+        active_trip_event_id: str,
+        evidence: str,
+    ) -> dict[str, Any]:
+        identifier = _identifier("clear id", clear_id)
+        source = _authority(authority)
+        trip_event_id = _identifier("active trip event id", active_trip_event_id)
+        payload = {
+            "schema_version": 1,
+            "clear_id": identifier,
+            "authority": source,
+            "active_trip_event_id": trip_event_id,
+            "evidence": _bounded_text("kill-switch clear evidence", evidence, maximum=600),
+            "active": False,
+            "model_clear_enabled": False,
+        }
+
+        def factory(events: list[Event]) -> Mapping[str, Any]:
+            status = _kill_switch_status(events)
+            if not status["active"]:
+                raise TicketAuthorityDenied("KILL_SWITCH_NOT_ACTIVE")
+            if status["active_trip_event_id"] != trip_event_id:
+                raise TicketAuthorityDenied("KILL_SWITCH_STATE_CHANGED")
+            return payload
+
+        event, created = self.store.append_once_computed(
+            "operator.kill_switch.cleared",
+            identifier,
+            factory,
+        )
+        if canonical_json(event.payload) != canonical_json(payload):
+            raise ValueError(
+                f"logical key collision for operator.kill_switch.cleared:{identifier}"
+            )
+        return {
+            **event.payload,
+            **self.status(),
+            "event_id": event.event_id,
+            "created": created,
+        }
+
+    def checkpoint(
+        self,
+        *,
+        checkpoint_id: str,
+        effect_id: str,
+        step: str,
+    ) -> dict[str, Any]:
+        """Record one atomic clear check between separately mediated effect legs."""
+
+        identifier = _identifier("checkpoint id", checkpoint_id)
+        payload = {
+            "schema_version": 1,
+            "checkpoint_id": identifier,
+            "effect_id": _identifier("effect id", effect_id),
+            "step": _identifier("effect step", step),
+            "clear": True,
+        }
+
+        def factory(events: list[Event]) -> tuple[str, Mapping[str, Any]]:
+            self.ensure_clear(events)
+            return identifier, payload
+
+        event, created = self.store.append_computed_once(
+            "operator.kill_switch.checkpoint", factory
+        )
+        return {**event.payload, "event_id": event.event_id, "created": created}
+
+
 @dataclass(frozen=True, slots=True)
 class ExecutionTicket:
     """One immutable host-issued authority envelope for one exact invocation."""
@@ -297,6 +441,7 @@ class ExecutionTicketAuthority:
         )
 
     def _validate_live(self, ticket: ExecutionTicket, events: list[Event]) -> None:
+        GlobalKillSwitch.ensure_clear(events)
         if _timestamp("expires_at", ticket.expires_at) <= _timestamp(
             "current time", self.store.clock()
         ):
@@ -315,6 +460,11 @@ class ExecutionTicketAuthority:
         spec, spec_digest, _revision = spec_row
         if not spec.active:
             raise TicketAuthorityDenied("CAPABILITY_INACTIVE")
+        administrative = self.capabilities._administrative_states(events).get(
+            ticket.capability
+        )
+        if administrative is not None and administrative["active"] is not True:
+            raise TicketAuthorityDenied("CAPABILITY_ADMINISTRATIVELY_PAUSED")
         if spec_digest != ticket.capability_spec_digest:
             raise TicketAuthorityDenied("CAPABILITY_SPEC_CHANGED")
         lease = self.capabilities._leases(events).get(ticket.lease_id)
@@ -451,6 +601,7 @@ class ExecutionTicketAuthority:
                 _identifier("registered verifier id", verifier_id)
 
         def factory(events: list[Event]) -> Mapping[str, Any]:
+            GlobalKillSwitch.ensure_clear(events)
             issuance = self._issued_event(events, identifier)
             if issuance is None:
                 raise TicketAuthorityDenied("UNKNOWN_TICKET")

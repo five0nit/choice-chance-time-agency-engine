@@ -82,7 +82,7 @@ def test_plugin_registers_exactly_one_tool_execution_middleware(
 ) -> None:
     context = register_context(tmp_path, monkeypatch)
 
-    assert len(context.tools) == 21
+    assert len(context.tools) == 23
     assert set(context.hooks) == {
         "pre_gateway_dispatch",
         "pre_llm_call",
@@ -287,7 +287,7 @@ def test_explicit_malformed_mediated_tools_configuration_keeps_denying_middlewar
         {"mediated_tools": configured},
     )
 
-    assert len(context.tools) == 21
+    assert len(context.tools) == 23
     assert set(context.hooks) == {
         "pre_gateway_dispatch",
         "pre_llm_call",

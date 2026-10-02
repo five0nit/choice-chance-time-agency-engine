@@ -23,6 +23,7 @@ from .cognitive_cycle import CognitiveCycle, Observation
 from .initiative import HMACFeedbackAuthority, InitiativeBridge, ProactiveFeedback
 from .kernel import AgencyKernel, default_constitution, resolve_constitution
 from .models import Option, options_from_dicts
+from .narrative import HumanNarrative
 from .opportunity_initiative import OpportunityInitiative
 from .proactive import InitiationSignals, ProactiveEngine
 from .principal import PrincipalIntent, PrincipalModel, PrincipalProfile
@@ -129,6 +130,28 @@ def command_replay(args: argparse.Namespace) -> None:
 
 def command_status(args: argparse.Namespace) -> None:
     _print(_kernel(args.db).status())
+
+
+def _print_human_narrative(value: dict[str, object], *, as_json: bool) -> None:
+    if as_json:
+        _print(value)
+    else:
+        print(value["text"])
+
+
+def command_human_status(args: argparse.Namespace) -> None:
+    view = HumanNarrative(EventStore(args.db)).status()
+    _print_human_narrative(view, as_json=args.json)
+
+
+def command_explain_latest(args: argparse.Namespace) -> None:
+    view = HumanNarrative(EventStore(args.db)).latest()
+    _print_human_narrative(view, as_json=args.json)
+
+
+def command_digest(args: argparse.Namespace) -> None:
+    view = HumanNarrative(EventStore(args.db)).digest(limit=args.limit)
+    _print_human_narrative(view, as_json=args.json)
 
 
 def command_autonomy_status(args: argparse.Namespace) -> None:
@@ -748,6 +771,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     status_parser = subparsers.add_parser("status")
     status_parser.set_defaults(func=command_status)
+
+    human_status_parser = subparsers.add_parser("human-status")
+    human_status_parser.add_argument("--json", action="store_true")
+    human_status_parser.set_defaults(func=command_human_status)
+
+    explain_latest_parser = subparsers.add_parser("explain-latest")
+    explain_latest_parser.add_argument("--json", action="store_true")
+    explain_latest_parser.set_defaults(func=command_explain_latest)
+
+    digest_parser = subparsers.add_parser("digest")
+    digest_parser.add_argument("--limit", type=int, default=8)
+    digest_parser.add_argument("--json", action="store_true")
+    digest_parser.set_defaults(func=command_digest)
 
     autonomy_status_parser = subparsers.add_parser("autonomy-status")
     autonomy_status_parser.add_argument("--workspace", default="state/autonomy-workspace")

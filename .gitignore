@@ -9,11 +9,19 @@ dist/
 .coverage
 htmlcov/
 *.egg-info/
+node_modules/
+firebase/hosting/dist/
+.firebase/
+firebase-debug.log
+firebase-debug.log*
+firestore-debug.log*
 
 # Local state and receipts
 state/
 .runtime/
 reports/
+!site/social-card.png
+!site/.nojekyll
 *.sqlite
 *.sqlite-*
 *.db
@@ -23,6 +31,8 @@ reports/
 .env
 .env.*
 !.env.example
+*service-account*.json
+*firebase-bridge-key*.json
 
 # Editors and operating systems
 .vscode/

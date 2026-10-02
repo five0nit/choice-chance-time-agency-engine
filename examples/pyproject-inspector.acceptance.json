@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "cct.cli_acceptance.v1",
+  "cases": [
+    {
+      "id": "declared-metadata", "argv": [],
+      "stdin": "[project]\nname='hypothetical-doc-tool'\nversion='2.3'\nrequires-python='>=3.11'\ndependencies=['zeta>=1', 'alpha']\n[project.scripts]\ndoc-tool='doc_tool:main'\n",
+      "exitCode": 0,
+      "jsonChecks": [
+        {"path": ["name"], "equals": "hypothetical-doc-tool"},
+        {"path": ["version"], "equals": "2.3"},
+        {"path": ["requires_python"], "equals": ">=3.11"},
+        {"path": ["dependency_count"], "equals": 2},
+        {"path": ["dependencies", 0], "equals": "alpha"},
+        {"path": ["dependencies", 1], "equals": "zeta>=1"},
+        {"path": ["scripts", 0], "equals": "doc-tool"}
+      ]
+    },
+    {
+      "id": "unknown-version", "argv": [],
+      "stdin": "[project]\nname='hypothetical-minimal'\ndynamic=['version']\n",
+      "exitCode": 0,
+      "jsonChecks": [
+        {"path": ["name"], "equals": "hypothetical-minimal"},
+        {"path": ["version"], "equals": null},
+        {"path": ["requires_python"], "equals": null},
+        {"path": ["dependency_count"], "equals": 0}
+      ]
+    },
+    {"id": "invalid-toml", "argv": [], "stdin": "[project\n", "exitCode": 2, "stdout": ""},
+    {"id": "missing-project", "argv": [], "stdin": "[tool.hypothetical]\nenabled=true\n", "exitCode": 2, "stdout": ""},
+    {"id": "invalid-dependencies", "argv": [], "stdin": "[project]\nname='hypothetical-invalid'\ndependencies=[1]\n", "exitCode": 2, "stdout": ""}
+  ]
+}

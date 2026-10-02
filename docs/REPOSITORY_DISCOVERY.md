@@ -1,68 +1,26 @@
-# Repository discovery and reuse decision
+# Repository discovery and reuse policy
 
-## Target
+The public candidate uses **selective reuse** of the existing CCT Agency Engine rather than replacing its kernel or adopting a generic agent framework.
 
-Package a public, dependency-free Python Choice–Chance–Time agency engine with:
+## Why this base
 
-- persistent goal provenance;
-- replayable reasons-responsive choice;
-- bounded stochastic exploration;
-- temporal event memory;
-- global-workspace cognition;
-- proactive initiative;
-- trusted continuity sensors;
-- reversible verified local execution;
-- outcome learning;
-- progressive authority; and
-- native Hermes integration.
+The existing implementation supplies the canonical event ledger, principal/capability split, typed effects, local verification, private artifact workflows, and optional dashboard adapters. New integrations should preserve those boundaries instead of treating tool availability as permission.
 
-## Discovery method
+The repository's [MIT license](../LICENSE) is the licensing reference. Manual review of its standard grant and warranty terms resolved an automated license-normalization ambiguity during base selection. That review does not certify every dependency, prove freedom from vulnerabilities, or establish release readiness.
 
-Repository and package discovery ran before public repackaging using the installed Brief2Ship CLI.
+## Dependency boundaries
 
-Sources:
+- The Python core uses the standard library.
+- Firebase support is an optional package extra; its SDKs and frontend dependencies require their own license, version, and vulnerability review.
+- Hermes model/provider integration uses the explicitly installed host environment.
+- Linux sandbox tooling is a platform prerequisite, not a Python core dependency.
 
-- GitHub;
-- PyPI.
+No third-party candidate is considered safe merely because discovery found or ranked it. Review its license, maintained API surface, transitive dependencies, and fit before execution or adoption.
 
-Candidate code was not executed and candidate dependencies were not installed.
+## Public documentation policy
 
-The first broad query caused GitHub Search HTTP 422 because of query length. A shorter refined pass completed, and the surviving candidates were inspected statically.
+Public documentation preserves architecture, supported APIs, example placeholders, and reproducible verification procedures. It deliberately excludes raw discovery output, local candidate paths, private branch/profile details, rollout logs, owner identifiers, and per-machine service receipts.
 
-## Candidate summary
+Keep detailed operational evidence in private release storage. Publish only sanitized, source-bound conclusions after checking them. A discovery decision is not a test result, a deployment receipt, or a current publication claim.
 
-| Candidate | Observed fit | Disposition | Reason |
-|---|---:|---|---|
-| Existing canonical CCT implementation | 95/100 | `selective-reuse` | Already implements the exact theory, event ledger, cognition, initiative, sensor, autonomy, verification, rollback, tests, and Hermes plugin required for this release. |
-| `selenium-python-ai-agent` | low semantic fit despite metadata score | `reject` | Selenium test-agent package; no Choice–Chance–Time governance, temporal agency ledger, or progressive authority model. |
-| `z3t-ai-agent-sdk` | low semantic fit | `reject` | General agent SDK; adopting it would replace rather than package the verified dependency-free CCT architecture. |
-| `voice-ai-governance` | narrow governance domain | `reject` | Voice-governance package, not an operational agency engine. |
-| `ai-agent-governance` | archived / insufficient evidence | `reject` | No suitable maintained implementation evidence for this architecture. |
-| Other generic agent SDK/plugin results | low fit or ambiguous licensing | `reject` | Missing the required CCT theory, replay, verification, and authority contracts. |
-
-## Decision
-
-**Disposition: `selective-reuse` of the existing canonical CCT implementation.**
-
-Public packaging changes the name, metadata, documentation, configuration defaults, plugin manifest, CI, and release hygiene. It does not replace the verified core with an unrelated framework.
-
-No external candidate source was copied.
-
-## Why not fork an existing agent framework?
-
-CCT is not another orchestration wrapper. Its defining contribution is the relationship between:
-
-- goal provenance;
-- complete alternatives;
-- constraint-before-chance selection;
-- replayable temporal consequences;
-- model proposal versus host authority;
-- exact effect verification;
-- rollback; and
-- capability-specific earned authority.
-
-A general agent SDK can host these ideas but does not provide them as one coherent behavioral contract. Replatforming would increase dependency and migration risk while weakening existing evidence.
-
-## Public packaging boundary
-
-The public repository excludes private development receipts, operator-local paths, profile IDs, and runtime state. Public verification evidence is regenerated from the sanitized source and documented in [`VERIFICATION.md`](VERIFICATION.md).
+See [verification](VERIFICATION.md) and the [public release gates](../PUBLIC_RELEASE.md).

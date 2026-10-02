@@ -13,7 +13,11 @@ import stat
 import sys
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-if str(PROJECT_ROOT) not in sys.path:
+try:
+    import cct_agent as _cct_agent  # noqa: F401
+except ModuleNotFoundError as error:
+    if error.name != "cct_agent":
+        raise
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from cct_agent import (  # noqa: E402

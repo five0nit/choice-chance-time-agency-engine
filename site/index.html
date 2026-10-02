@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f2efe5">
+  <meta name="description" content="Know when to act. Know when to wait. A practical field guide to Choice–Chance–Time: bounded initiative, persistent goals, explicit permissions, and verified outcomes for AI agents.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="CCT Agency Engine — Know when to act. Know when to wait.">
+  <meta property="og:description" content="From context to a bounded next step. Explore the ACT / WAIT / ASK teaching docket, the agency loop, and the boundary between intention and permission.">
+  <meta property="og:url" content="https://five0nit.github.io/choice-chance-time-agency-engine/">
+  <meta property="og:image" content="https://five0nit.github.io/choice-chance-time-agency-engine/social-card.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="CCT Agency Engine field guide: Know when to act. Know when to wait. Choice, Chance, Time.">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="canonical" href="https://five0nit.github.io/choice-chance-time-agency-engine/">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script src="docket.js" defer></script>
+  <title>CCT Agency Engine — Know when to act. Know when to wait.</title>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="page-frame">
+    <header class="masthead">
+      <a class="wordmark" href="#main" aria-label="CCT Agency Engine home">
+        <svg viewBox="0 0 48 48" width="40" height="40" aria-hidden="true"><path d="M9 10h30v28H9zM9 19h30M19 19v19" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="29" cy="29" r="4" fill="currentColor"/></svg>
+        <span>CCT<span class="wordmark-sub">Agency Engine</span></span>
+      </a>
+      <nav aria-label="Main navigation">
+        <a href="#the-loop">The loop</a>
+        <a href="#boundaries">Boundaries</a>
+        <a href="https://github.com/five0nit/choice-chance-time-agency-engine" class="source-link">Source <span aria-hidden="true">↗</span></a>
+      </nav>
+    </header>
+
+    <main id="main">
+      <section class="hero" aria-labelledby="page-title">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="registration-mark" aria-hidden="true">+</span> A field guide to bounded initiative</p>
+          <h1 id="page-title">Know when<br>to act.<br>Know when<br><em>to wait.</em></h1>
+          <p class="hero-deck">An agency engine for turning context, goals and history into a useful next step—not just another prompt to “be autonomous.”</p>
+          <a class="button primary" href="#decision-docket">Try the decision docket <span aria-hidden="true">↘</span></a>
+          <p class="edition">Python 3.11+ <span aria-hidden="true">/</span> MIT <span aria-hidden="true">/</span> <a href="https://github.com/five0nit/choice-chance-time-agency-engine/releases/tag/v0.9.0a22">v0.9.0a22 · alpha</a></p>
+        </div>
+
+        <div class="hero-object">
+          <article class="docket" id="decision-docket" tabindex="-1" aria-labelledby="docket-heading">
+            <div class="docket-topline"><span>Teaching example</span><span>Not a live engine</span></div>
+            <div class="docket-heading"><h2 id="docket-heading">Decision docket</h2><span class="docket-index" aria-hidden="true">01</span></div>
+            <fieldset class="scenario-controls" hidden>
+              <legend>Change the situation</legend>
+              <div class="scenario-buttons">
+                <button type="button" data-scenario="act" aria-pressed="true">New<br>evidence</button>
+                <button type="button" data-scenario="wait" aria-pressed="false">Same<br>evidence</button>
+                <button type="button" data-scenario="ask" aria-pressed="false">No<br>permission</button>
+              </div>
+            </fieldset>
+            <div id="docket-result" class="docket-content" aria-live="polite" aria-atomic="true" data-state="act">
+              <dl class="evidence-rows">
+                <div><dt>Goal</dt><dd>Keep project evidence current.</dd></div>
+                <div><dt>Signal</dt><dd id="signal-text">A trusted source revision changed.</dd></div>
+                <div><dt>Scope</dt><dd id="scope-text">One create-only local evidence audit.</dd></div>
+              </dl>
+              <div class="decision-output">
+                <div class="verdict-row"><span id="verdict" class="verdict">ACT</span><span class="verdict-mark" id="verdict-mark" aria-hidden="true">↗</span></div>
+                <h3 id="decision-title">Take the bounded next step.</h3>
+                <p id="decision-reason">The signal is new, the goal is relevant, and an existing permission covers the local audit. Check the result before recording success.</p>
+              </div>
+              <div class="receipt-strip"><span class="tiny-label">Still outside scope</span><p id="outside-scope">Running a shell command or publishing the result.</p></div>
+            </div>
+            <noscript><p class="no-js-note">The ACT example above is static. If nothing changed, WAIT avoids a duplicate. If permission is missing, ASK requests clarification or authorization; it does not execute.</p></noscript>
+            <p class="docket-caption">A deterministic browser illustration. No Python, model, file access, or real action runs here. ACT / WAIT / ASK are teaching labels, not a three-value kernel API.</p>
+          </article>
+          <p class="object-note"><span aria-hidden="true">↳</span> A reason to act is not permission to act.</p>
+        </div>
+      </section>
+
+      <aside class="in-brief" aria-label="In brief">
+        <p class="eyebrow">The short version</p>
+        <p><strong>CCT helps an agent decide what deserves a next step.</strong> Persistent goals give it direction. History gives it context. Explicit authority limits the effect. Verification tells it what actually happened.</p>
+      </aside>
+
+      <section class="field-section model-section" id="the-model" aria-labelledby="model-heading">
+        <div class="section-heading"><p class="eyebrow">01 / The idea</p><h2 id="model-heading">Three ingredients.<br><em>Not a claim of consciousness.</em></h2></div>
+        <div class="model-layout">
+          <div class="model-aside"><p class="formula" aria-label="Choice times Chance times Time">C <span>×</span> C <span>×</span> T</p><p>Choice–Chance–Time is an engineering model of <strong>operational agency</strong>: alternatives, bounded exploration, and continuity.</p><a class="text-link" href="https://github.com/five0nit/choice-chance-time-agency-engine/blob/main/docs/CHOICE_CHANCE_TIME.md">Read the complete model <span aria-hidden="true">↗</span></a></div>
+          <dl class="ingredient-list">
+            <div><dt><span aria-hidden="true">C₁</span>Choice</dt><dd>Compare real alternatives, including doing nothing. Keep the reasons and rejected branches inspectable.<small>Without it: a forced response.</small></dd></div>
+            <div><dt><span aria-hidden="true">C₂</span>Chance</dt><dd>Explore within the allowed set using recorded seeds. Blockers apply <em>before</em> probability, never after.<small>Without it: a policy that can stay frozen.</small></dd></div>
+            <div><dt><span aria-hidden="true">T</span>Time</dt><dd>Carry goals, commitments, evidence and outcomes forward. Let consequences inform the next choice.<small>Without it: another stateless reaction.</small></dd></div>
+          </dl>
+        </div>
+      </section>
+
+      <section class="field-section loop-section" id="the-loop" aria-labelledby="loop-heading">
+        <div class="section-heading"><p class="eyebrow">02 / The mechanism</p><h2 id="loop-heading">From a signal<br>to a <em>verified next step.</em></h2><p class="section-deck">The model can propose. The host grants authority. The engine keeps the decision and its consequences connected.</p></div>
+        <ol class="loop-flow" aria-label="The agency loop">
+          <li><span class="step-number">01</span><h3>Observe</h3><p>Bring in structured observations from configured sources.</p></li>
+          <li><span class="step-number">02</span><h3>Remember</h3><p>Relate the signal to goals, commitments and history.</p></li>
+          <li><span class="step-number">03</span><h3>Filter</h3><p>Remove blocked options. Preserve <code>NO_OP</code>.</p></li>
+          <li><span class="step-number">04</span><h3>Decide</h3><p>Score allowed alternatives; record bounded exploration.</p></li>
+          <li><span class="step-number">05</span><h3>Respond</h3><p>Take an authorized step, wait, or surface a question.</p></li>
+          <li><span class="step-number">06</span><h3>Verify</h3><p>Check the actual effect. Keep receipts, not just claims.</p></li>
+          <li><span class="step-number">07</span><h3>Learn</h3><p>Update reliability from outcomes, within the same authority.</p></li>
+        </ol>
+        <div class="return-path"><span aria-hidden="true">↶</span><p>History feeds the next decision. It does not write itself a new permission slip.</p></div>
+        <a class="text-link" href="https://github.com/five0nit/choice-chance-time-agency-engine/blob/main/docs/ARCHITECTURE.md">Follow the architecture in source <span aria-hidden="true">↗</span></a>
+      </section>
+
+      <section class="quiet-section" aria-labelledby="quiet-heading">
+        <div class="quiet-copy"><p class="eyebrow">03 / Restraint is part of agency</p><h2 id="quiet-heading">Doing nothing<br>is a <em>decision.</em></h2><p>An agent that notices everything should not interrupt about everything. Useful initiative needs a way to stay quiet.</p><p class="quiet-note">“Be proactive” is an intention.<br>These are mechanisms.</p></div>
+        <dl class="quiet-mechanisms">
+          <div><dt>NO_OP / WAIT</dt><dd>Deferring is a first-class outcome—not a failed attempt to find work.</dd></div>
+          <div><dt>Cooldown</dt><dd>A relevant idea does not need to be repeated at every wake.</dd></div>
+          <div><dt>Deduplication</dt><dd>Unchanged state and already-claimed work should not produce another effect.</dd></div>
+          <div><dt>Caps</dt><dd>Bounded emissions and action budgets constrain throughput even when work looks useful.</dd></div>
+        </dl>
+      </section>
+
+      <section class="field-section boundaries-section" id="boundaries" aria-labelledby="boundaries-heading">
+        <div class="section-heading"><p class="eyebrow">04 / Read the boundary</p><h2 id="boundaries-heading">Intention<br>is not <em>permission.</em></h2><p class="section-deck">A proposed goal, an interested reply, or a successful past run does not authorize a new kind of effect.</p></div>
+        <div class="boundary-ledger">
+          <article><p class="boundary-label">A / Core local executor</p><h3>Narrow by construction.</h3><p>The autonomous filesystem executor creates new text files beneath a pinned workspace root, with bounds and independent verification. It does not overwrite existing files.</p><p>Shell, network, publication, credential access and other broad effects are not part of that executor. More proven throughput does not turn it into a general-purpose command runner.</p><a class="text-link" href="https://github.com/five0nit/choice-chance-time-agency-engine/blob/main/docs/AUTHORITY_MODEL.md">Authority model <span aria-hidden="true">↗</span></a></article>
+          <article><p class="boundary-label">B / Explicit optional integrations</p><h3>Separate gates. Separate setup.</h3><p>Operator adapters and standing autonomy can enable configured effects only through host-owned registrations, scoped leases or exact tickets, and their own verification.</p><p>The optional Firebase owner control plane adds authenticated remote coordination through a local sidecar. Canonical authority stays local; this education page connects to none of it.</p><a class="text-link" href="https://github.com/five0nit/choice-chance-time-agency-engine/blob/main/docs/PERSONAL_AGENCY.md">Principal &amp; capability gates <span aria-hidden="true">↗</span></a></article>
+        </div>
+        <div class="boundary-footnote"><strong>Know what this does not cover.</strong><p>CCT does not sandbox the surrounding agent process or automatically mediate all its other tools. Hash-chained history is an audit mechanism, not protection against a fully compromised host. This is alpha software, not a production security guarantee.</p></div>
+      </section>
+
+      <section class="field-section start-section" id="get-started" aria-labelledby="start-heading">
+        <div class="start-copy"><p class="eyebrow">05 / Try the real thing</p><h2 id="start-heading">Start small.<br><em>Inspect the evidence.</em></h2><p>Run a local cognitive episode before connecting an agent or granting effects.</p><ul class="requirements"><li>Python 3.11 or newer</li><li>No mandatory Python runtime dependencies</li><li>Linux for the hardened filesystem executor</li><li>Optional Firebase dependencies installed separately</li></ul><div class="start-links"><a class="button primary" href="https://github.com/five0nit/choice-chance-time-agency-engine/releases/tag/v0.9.0a22">Get v0.9.0a22 alpha <span aria-hidden="true">↗</span></a><a class="text-link" href="https://github.com/five0nit/choice-chance-time-agency-engine#quick-start">Full setup guide <span aria-hidden="true">↗</span></a></div></div>
+        <div class="code-sheet"><div class="code-topline"><span>Local terminal / POSIX shell</span><button class="copy-button" type="button" hidden>Copy commands</button></div><pre><code id="setup-commands">git clone https://github.com/five0nit/choice-chance-time-agency-engine.git
+cd choice-chance-time-agency-engine
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e .
+
+# Use a fresh temporary event store.
+demo_dir=$(mktemp -d)
+cct-engine --db "$demo_dir/agency.sqlite" cognitive-demo --seed 0
+cct-engine --db "$demo_dir/agency.sqlite" human-status
+cct-engine --db "$demo_dir/agency.sqlite" events --limit 10</code></pre><p class="code-note">The demo writes a local SQLite ledger. Read the decision, then inspect the recorded events. It does not enable a scheduler, owner integration, or broad execution.</p><p id="copy-status" class="copy-status" role="status"></p></div>
+      </section>
+
+      <section class="reading-section" aria-labelledby="reading-heading"><div><p class="eyebrow">Keep the evidence close</p><h2 id="reading-heading">Read past the headline.</h2><p>The field guide is the introduction.<br>The source is the specification to inspect.</p></div><nav aria-label="Further reading" class="reading-list"><a href="https://github.com/five0nit/choice-chance-time-agency-engine/blob/main/docs/CHOICE_CHANCE_TIME.md"><span>01</span> The operational-agency model <span aria-hidden="true">↗</span></a><a href="https://github.com/five0nit/choice-chance-time-agency-engine/blob/main/docs/ARCHITECTURE.md"><span>02</span> Architecture &amp; decision records <span aria-hidden="true">↗</span></a><a href="https://github.com/five0nit/choice-chance-time-agency-engine/blob/main/docs/FIREBASE_CONTROL_PLANE.md"><span>03</span> Optional owner control plane <span aria-hidden="true">↗</span></a><a href="https://github.com/five0nit/choice-chance-time-agency-engine/issues"><span>04</span> Questions, experiments &amp; issues <span aria-hidden="true">↗</span></a></nav></section>
+    </main>
+    <footer class="footer"><div><a class="footer-brand" href="#main">CCT Agency Engine <span aria-hidden="true">↑</span></a><p>Choice. Chance. Time.<br>Bounded initiative. Checkable consequences.</p></div><div class="footer-meta"><p>Open source · MIT · v0.9.0a22 alpha</p><a href="https://github.com/five0nit/choice-chance-time-agency-engine">Inspect the source <span aria-hidden="true">↗</span></a><p class="footer-note">Static education page. No sign-in or live agent connection.</p></div></footer>
+  </div>
+</body>
+</html>

@@ -1,193 +1,68 @@
-# Verification
+# Verification guide
 
-## Release candidate
+This is a reproducible validation guide, not a historical run log. Candidate `0.9.0a22` release status is tracked in [PUBLIC_RELEASE.md](../PUBLIC_RELEASE.md). No old test total, private rollout, or successful fixture is proof of the current candidate.
 
-- Public name: **Choice–Chance–Time Agency Engine**
-- Distribution: `cct-agency-engine`
-- Version: `0.7.0`
-- Python namespace: `cct_agent`
-- Hermes plugin: `cct-agency`
-- Runtime dependencies: none
+## Core checks
 
-## Test suite
-
-Command:
+Use a fresh Python >=3.11 environment and a reviewed checkout:
 
 ```bash
-python3 -m pytest -v --tb=short
+python3 -m venv .venv
+. .venv/bin/activate
+python -m pip install -e . pytest build twine
+python -m pytest -o addopts= -q
+python -m compileall -q cct_agent hermes_plugin scripts tests
+python -m build --sdist --wheel
+python -m twine check dist/*
 ```
 
-Result:
+`pytest`, `build`, and `twine` are verification tools, not mandatory core runtime dependencies. Keep actual passed/failed/skipped counts with source identity in a private receipt; do not substitute a prior release's totals.
 
-```text
-collected 141 items
-141 passed in 20.19s
-```
+Inspect both distribution archives for private config, cloud identifiers, credentials, absolute owner paths, operational logs, and missing public documentation. Test the installed wheel from a directory outside the checkout using a fresh scratch ledger. Confirm its version, import location, CLI help, cognitive demo, human status, and event-chain behavior.
 
-Coverage families:
+## Behavioral matrix
 
-- autonomy executor, verification, rollback, race, and restart behavior;
-- bounded cognition and global workspace;
-- adaptive initiative and verified feedback;
-- kernel choice, chance, temporal ledger, and Hermes registration;
-- deterministic autonomy acceptance episode;
-- proactive SEND/WAIT, caps, cooldown, deduplication, and crash boundaries;
-- trusted sensor path, cursor, privacy, malformed-data, and scheduler behavior.
+| Area | Required checks |
+|---|---|
+| Kernel | Blockers before exploration, canonical `NO_OP`, deterministic replay, provenance |
+| Ledger | Hash-chain validation, append-once logical keys, constitution continuity |
+| Cognition and initiative | Bounded workspace, learned competence without permission, cooldown/caps/dedupe |
+| Create-only executor | Exact hashes and inode claims, no replacement, fallback, rollback, concurrency, restart |
+| Principal/capabilities | External grant, scope, expiry, revocation, atomic budget consumption |
+| Operator integrations | Host registration, exact tickets, kill switch, per-class verifier and crash semantics |
+| Owner workflows | Identity, intent/effective separation, charged budgets, paused/revoked/stale behavior |
+| Private artifacts | Networkless sandbox, independent acceptance, immutable lineage, fail-closed prerequisites |
+| Privacy | No secret/raw producer content in public projections; no private operational data in artifacts |
 
-## Static checks
+Run the source acceptance scripts in new temporary directories, never a live profile. `scripts/cct_phase10_demo.py`, `scripts/cct_phase11_demo.py`, and `scripts/cct_phase12_demo.py` exercise local contracts; inspect each result rather than treating process exit alone as success.
+
+## Platform boundary
+
+Hardened local effects need Linux/POSIX primitives. Real private artifact tests additionally need Bubblewrap, seccomp, usable namespaces, and an interpreter exposing `os.memfd_create`. Report unsupported platforms and skipped prerequisites explicitly. Do not remove isolation or weaken assertions to produce a passing result.
+
+## Optional Firebase and frontend checks
+
+Install the declared SDK extra when testing the bridge:
 
 ```bash
-ruff check cct_agent hermes_plugin scripts tests
-python3 -m compileall -q cct_agent hermes_plugin scripts tests
-git diff --check
+python -m pip install -e '.[firebase]'
+python -m pytest -o addopts= -q tests/test_firebase_bridge.py tests/test_firebase_bridge_sdk.py
+npm ci --prefix firebase/hosting
+npm test --prefix firebase/hosting
+npm run test:rules --prefix firebase/hosting
+npm run build --prefix firebase/hosting
 ```
 
-Result:
+Emulator/browser tests require their declared tooling and synthetic identities. They must never target a production project by default. Check phone and desktop layouts, logged-out denial, owner/stranger/anonymous rules, control freshness, exact readback, and sign-out clearing. SDK tests with mocked RPCs establish SDK behavior, not live cloud recovery.
 
-```text
-All checks passed!
-```
+The [educational Pages site](https://five0nit.github.io/choice-chance-time-agency-engine/) is distinct from the Firebase owner UI. Its build, accessibility/layout checks, deployment, and exact public readback require separate evidence.
 
-## Hermes Plugin Doctor
+## Integration and live acceptance
 
-Command:
+Use the [Hermes integration guide](HERMES_INTEGRATION.md) and current host Plugin Doctor. Do not infer a live gateway upgrade from a local import test.
 
-```bash
-hermes plugins doctor . --ci
-```
+A live cloud/provider acceptance requires specific authorization, exact target identity, bounded effects, and independent readback. A reachable public shell is not a signed-in owner session; a queued message is not delivery; a successful send is not a human reply; a selected follow-up is not an executed artifact. Retain ambiguous results as unknown rather than replaying them blindly.
 
-Result:
+## Documentation checks
 
-```text
-Plugin Doctor: <repository>
-  manifest: cct-agency 0.7.0 (standalone)
-  OK: runtime discovery, manifest parsing, import, and registration passed
-  registrations: 15 tool(s), 2 hook(s)
-```
-
-Doctor uses Hermes' real manifest parser, directory discovery, import path, plugin context, hook registry, and tool registry.
-
-## Hermes installation behavior
-
-The standard `hermes plugins install` community path was tested against Hermes
-0.20.5. It correctly blocked the repository with a dangerous verdict because
-static scanning treats intentional credential denylist strings and inert
-prompt-injection regression fixtures as active risk. `--force` cannot override
-that verdict. The public README does not recommend disabling scanning.
-
-The documented reviewed-source path was then tested in a clean Hermes 0.20.5
-environment with no pre-existing CCT entry point:
-
-- exact release checkout placed under `$HERMES_HOME/plugins/cct-agency`;
-- Plugin Doctor passed;
-- directory discovery registered 15 tools and 2 hooks;
-- plugin enabled as user source at version `0.7.0`;
-- built-in tool-override capability remained denied.
-
-Receipt:
-
-```text
-DIRECTORY_SHIM_PASS registrations=15-tools,2-hooks source=git version=0.7.0
-```
-
-## Distribution build
-
-Command:
-
-```bash
-uv build
-```
-
-Artifacts:
-
-```text
-dist/cct_agency_engine-0.7.0-py3-none-any.whl
-dist/cct_agency_engine-0.7.0.tar.gz
-```
-
-Final artifact checksums are published in `SHA256SUMS.txt` on the immutable
-GitHub Release. Keeping checksums beside the assets avoids embedding a recursive
-source-distribution checksum in this document. Source publication does not imply
-PyPI publication.
-
-Wheel inspection confirmed `hermes_plugin/plugin.yaml` and the complete
-`cct_agent` package. Source-distribution inspection confirmed the public README,
-native plugin manifest, security policy, architecture documentation, scheduler
-scripts, deterministic demo, and tests.
-
-## Isolated wheel install
-
-The wheel was installed without dependencies into a fresh temporary Python 3.11 virtual environment.
-
-Verified:
-
-- `cct_agent.__version__ == "0.7.0"`;
-- distribution metadata version `0.7.0`;
-- `hermes_agent.plugins` entry point `cct-agency` present;
-- `cct-engine` console script available;
-- new store identity `CCT-Agent`;
-- cognitive demo event chain valid.
-
-Receipt:
-
-```text
-ISOLATED_METADATA_PASS version=0.7.0 entrypoint=cct-agency
-ISOLATED_WHEEL_RUNTIME_PASS identity=CCT-Agent chain=valid
-```
-
-## Deterministic autonomy episode
-
-Command class:
-
-```bash
-python3 scripts/cct_phase10_demo.py \
-  --db <temporary>/agency.sqlite \
-  --workspace <temporary>/workspace \
-  --state-root <temporary>/autonomy
-```
-
-Verified:
-
-- first fragile opportunity selected;
-- real primary collision detected;
-- validated fallback completed;
-- first artifact independently verified;
-- capability quality changed later opportunity selection;
-- stable second artifact independently verified;
-- controlled terminal failure remained failed;
-- prior temporary write rolled back;
-- foreign collision file preserved;
-- executable content absent from event payloads;
-- event chain valid.
-
-Receipt:
-
-```text
-SOURCE_AUTONOMY_DEMO_PASS chain=valid first=verified second=verified rollback=complete
-```
-
-## Public-safety scan
-
-The public candidate file set is checked for:
-
-- operator-local absolute paths;
-- private profile identifiers;
-- known personal routing IDs;
-- common API-key/token/private-key shapes;
-- raw token/password JSON values;
-- broken relative Markdown links;
-- ignored runtime/build/cache files.
-
-Historical private development receipts are excluded from the clean public repository snapshot.
-
-## Honest boundary
-
-These results verify source behavior, packaging, plugin registration, deterministic demos, and public-snapshot hygiene.
-
-They do not prove:
-
-- phenomenal consciousness;
-- arbitrary host-tool mediation;
-- external platform exactly-once delivery;
-- production suitability for credentials, money, legal effects, or irreversible actions;
-- security against a fully compromised same-user host process.
+Validate retained Markdown file and fragment targets after removals. Recheck links from repository-level Markdown and the package manifest in the integration lane. Scan docs and built archives separately for personal emails, chat IDs, private profiles, absolute owner paths, cloud project IDs, secrets, raw discovery receipts, and stale publish claims. Generic API field names and explicit placeholders are not live configuration.

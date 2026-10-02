@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#08100f">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2308100f'/%3E%3Cpath d='M8 9h16v3H11v8h13v3H8z' fill='%2370f0b5'/%3E%3C/svg%3E">
+  <title>CCTAE Control Plane</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#overview">Skip to control plane</a>
+  <div class="shell">
+    <aside class="rail" aria-label="Dashboard sections">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">C³</span>
+        <span><strong>CCTAE</strong><small>Control plane</small></span>
+      </div>
+      <nav>
+        <button type="button" data-target="overview" aria-current="page">Overview</button>
+        <button type="button" data-target="permissions">Permissions</button>
+        <button type="button" data-target="access">Access</button>
+        <button type="button" data-target="automations">Automations</button>
+        <button type="button" data-target="approvals">Approvals</button>
+        <button type="button" data-target="audit">Audit</button>
+        <button type="button" data-target="emergency">Emergency</button>
+      </nav>
+      <div class="rail-foot">
+        <span class="mode-dot" aria-hidden="true"></span>
+        <span><strong id="mode-label">READ ONLY</strong><small id="mode-detail">Local ledger projection</small></span>
+      </div>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">ADMINISTRATIVE DASHBOARD · LOCALHOST</p>
+          <h1>Authority, access, automation.</h1>
+        </div>
+        <div class="top-actions">
+          <span id="freshness" class="freshness">Loading state…</span>
+          <button id="refresh" type="button" class="button secondary">Refresh state</button>
+        </div>
+      </header>
+
+      <div id="loading" class="loading" role="status" aria-live="polite">
+        <span></span> Verifying CCTAE ledger…
+      </div>
+      <div id="error" class="error-panel" role="alert" hidden></div>
+
+      <section id="overview" class="panel hero-panel" aria-labelledby="overview-title">
+        <div id="outcome" class="outcome state-loading">
+          <div>
+            <p class="section-kicker">CURRENT OUTCOME</p>
+            <h2 id="overview-title">Loading verified state</h2>
+            <p id="outcome-detail">Reading bounded projections from the event ledger.</p>
+          </div>
+          <div class="next-action">
+            <span>Next action</span>
+            <strong id="next-action">Wait for verification.</strong>
+          </div>
+        </div>
+        <div id="summary-grid" class="summary-grid" aria-label="System summary"></div>
+        <div class="goal-strip">
+          <div>
+            <p class="section-kicker">CURRENT WORK</p>
+            <strong id="current-goal">No active dashboard goal found</strong>
+          </div>
+          <span class="pill">Evidence-first</span>
+        </div>
+      </section>
+
+      <section id="permissions" class="panel" aria-labelledby="permissions-title">
+        <div class="section-heading">
+          <div><p class="section-kicker">CAPABILITY ENVELOPE</p><h2 id="permissions-title">Permissions</h2></div>
+          <p>Effective authority combines specification, lease, ticket requirement, chain health, and emergency state.</p>
+        </div>
+        <div id="control-session" class="control-session" hidden>
+          <div>
+            <p class="section-kicker">HOST-ISSUED OPERATOR SESSION</p>
+            <strong id="session-state">Locked.</strong>
+            <p id="control-message" aria-live="polite">No permission change can be applied while locked.</p>
+          </div>
+          <div class="unlock-row">
+            <label for="bootstrap-token">One-use bootstrap token</label>
+            <div>
+              <input id="bootstrap-token" type="password" autocomplete="off" spellcheck="false" maxlength="256">
+              <button id="unlock-controls" type="button" class="button secondary">Unlock controls</button>
+            </div>
+          </div>
+        </div>
+        <div class="table-shell"><div class="table-scroll">
+          <table>
+            <thead><tr><th>Capability</th><th>Effective state</th><th>Risk</th><th>Scope</th><th>Lease</th><th>Budget</th><th>Control</th></tr></thead>
+            <tbody id="permissions-body"></tbody>
+          </table>
+        </div></div>
+      </section>
+
+      <section id="access" class="panel" aria-labelledby="access-title">
+        <div class="section-heading">
+          <div><p class="section-kicker">IDENTITY + ROUTE</p><h2 id="access-title">Access</h2></div>
+          <p>Connection never implies permission. Each route advances through independently verified stages.</p>
+        </div>
+        <div id="access-grid" class="card-grid"></div>
+      </section>
+
+      <section id="automations" class="panel" aria-labelledby="automations-title">
+        <div class="section-heading">
+          <div><p class="section-kicker">TRIGGERS + RECEIPTS</p><h2 id="automations-title">Automations</h2></div>
+          <p>Observed ledger behavior only. Schedule editing arrives behind preview, confirmation, apply, and readback.</p>
+        </div>
+        <div id="automation-grid" class="card-grid"></div>
+      </section>
+
+      <section id="approvals" class="panel" aria-labelledby="approvals-title">
+        <div class="section-heading">
+          <div><p class="section-kicker">OPERATOR DECISIONS</p><h2 id="approvals-title">Approvals</h2></div>
+          <p>A preference or clarification answer does not grant effect authority.</p>
+        </div>
+        <div id="approval-list" class="stack-list"></div>
+      </section>
+
+      <section id="audit" class="panel" aria-labelledby="audit-title">
+        <div class="section-heading">
+          <div><p class="section-kicker">HUMAN-FIRST RECEIPTS</p><h2 id="audit-title">Audit</h2></div>
+          <p id="audit-summary">Verifying recent outcomes…</p>
+        </div>
+        <div id="audit-list" class="timeline"></div>
+      </section>
+
+      <section id="emergency" class="panel emergency-panel" aria-labelledby="emergency-title">
+        <div class="section-heading">
+          <div><p class="section-kicker">HARD BOUNDARY</p><h2 id="emergency-title">Emergency</h2></div>
+          <p>Emergency controls remain visible even when all other authority is blocked.</p>
+        </div>
+        <div class="emergency-grid">
+          <div class="stop-state"><span id="stop-light"></span><div><small>GLOBAL EFFECT STATE</small><strong id="stop-state">Checking…</strong><p id="stop-detail">No state loaded.</p></div></div>
+          <div class="preview-controls">
+            <p class="section-kicker">Preview controls</p>
+            <button id="inspect-failure" type="button" class="button secondary">Inspect failure receipt</button>
+            <button type="button" class="button danger" data-mutation disabled>Stop all effects</button>
+            <button type="button" class="button secondary" data-mutation disabled>Pause automations</button>
+            <button type="button" class="button secondary" data-mutation disabled>Revoke active leases</button>
+            <small>Disabled in this read-only release. No browser mutation endpoint exists.</small>
+          </div>
+        </div>
+      </section>
+
+      <footer>
+        <span>CCTAE administrative dashboard · source state, not permission</span>
+        <span id="schema-version">Snapshot unavailable</span>
+      </footer>
+    </main>
+  </div>
+
+  <dialog id="control-dialog" class="control-dialog" aria-labelledby="control-dialog-title">
+    <div class="dialog-heading">
+      <div><p class="section-kicker">EXACT OPERATOR CONFIRMATION</p><h2 id="control-dialog-title">Permission preview</h2></div>
+      <span class="pill">One use</span>
+    </div>
+    <p id="preview-impact">No preview loaded.</p>
+    <dl class="preview-grid">
+      <div><dt>State</dt><dd id="preview-state-change">—</dd></div>
+      <div><dt>Scope</dt><dd id="preview-scope">—</dd></div>
+      <div><dt>Control revision</dt><dd id="preview-revision">—</dd></div>
+      <div><dt>Target</dt><dd id="preview-target">Local CCTAE · bound ledger</dd></div>
+      <div class="wide"><dt>Confirmation expires</dt><dd><code id="preview-expiry">—</code></dd></div>
+    </dl>
+    <ul class="impact-list">
+      <li id="preview-authority-impact">No authority impact loaded.</li>
+      <li>No lease, execution ticket, access route, credential, or provider call is created.</li>
+      <li id="preview-duration-impact">The displayed expiry applies only to confirmation.</li>
+    </ul>
+    <div class="digest-block"><span>Preview SHA-256</span><code id="preview-digest">—</code></div>
+    <p id="control-dialog-result" class="dialog-result" aria-live="polite">Review exact scope and state.</p>
+    <div class="dialog-actions">
+      <button id="cancel-control" type="button" class="button secondary">Cancel</button>
+      <button id="confirm-apply" type="button" class="button danger" disabled>Confirm and host-apply</button>
+    </div>
+  </dialog>
+
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>

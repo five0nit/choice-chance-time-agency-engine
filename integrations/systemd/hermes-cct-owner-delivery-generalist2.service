@@ -1,0 +1,27 @@
+[Unit]
+Description=CCT canonical owner discovery to private sandboxed delivery (generalist2)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=HERMES_HOME=/path/to/operator-home/.hermes/profiles/generalist2
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/path/to/operator-home/.hermes/hermes-agent
+EnvironmentFile=/path/to/operator-home/.hermes/profiles/generalist2/config/cct-owner-delivery.env
+WorkingDirectory=/tmp
+ExecStart=/path/to/operator-home/.hermes/profiles/generalist2/releases/cct-continuation-20260915-r2/venv/bin/python -m cct_agent.owner_delivery --home /path/to/operator-home/.hermes/profiles/generalist2 --loop-seconds 60
+Restart=on-failure
+RestartSec=60
+UMask=0077
+TimeoutStopSec=30
+KillMode=control-group
+MemoryMax=1G
+TasksMax=64
+NoNewPrivileges=true
+# Bubblewrap must create its own user/mount/network namespaces. Do not set
+# RestrictNamespaces or PrivateUsers; the inner payload is separately contained.
+
+[Install]
+WantedBy=default.target

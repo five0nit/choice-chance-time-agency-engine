@@ -1,0 +1,30 @@
+/* A read-only delivery lane, inside the existing conversation layout. */
+.owner-delivery { margin: 28px 0; padding: 22px; border: 1px solid var(--line-strong); border-left: 3px solid var(--green); background: var(--surface); border-radius: 6px; overflow-wrap: anywhere; }
+.owner-delivery h2 { margin: 12px 0; font-size: 1.35rem; font-weight: 500; line-height: 1.3; }
+.owner-delivery h3 { font-size: 1rem; font-weight: 500; margin: 24px 0 10px; }
+.owner-delivery p { font-size: .82rem; line-height: 1.65; color: var(--muted); }
+.owner-delivery .delivery-mode { color: var(--text); font-weight: 500; }
+.delivery-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 24px; margin: 18px 0; }
+.delivery-facts > div { min-width: 0; }
+.delivery-facts dt, .delivery-flags dt { font-size: .67rem; color: var(--muted); margin-bottom: 5px; }
+.delivery-facts dd, .delivery-flags dd { font-size: .78rem; margin: 0; line-height: 1.6; }
+.delivery-facts code { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .72rem; }
+.delivery-counts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-block: 1px solid var(--line); padding: 15px 0; gap: 12px; }
+.delivery-counts strong, .delivery-counts span { display: block; }
+.delivery-counts strong { font-size: 1.35rem; font-weight: 500; }
+.delivery-counts span { font-size: .67rem; color: var(--muted); margin-top: 5px; }
+.delivery-selected { margin-top: 24px; }
+.delivery-selected h3 { font-size: 1.12rem; margin-top: 10px; white-space: pre-wrap; }
+.delivery-next { padding: 14px 16px; border-left: 2px solid var(--green); background: var(--bg); margin: 18px 0; }
+.delivery-next strong { font-size: .78rem; font-weight: 500; }
+.delivery-next p { margin: 8px 0 0; white-space: pre-wrap; }
+.delivery-capabilities { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 14px; }
+.delivery-capability { min-width: 0; padding: 14px; border: 1px solid var(--line); }
+.delivery-capability h4 { font: .77rem ui-monospace, monospace; margin: 0 0 14px; }
+.delivery-capability p { margin-bottom: 0; font-size: .74rem; white-space: pre-wrap; }
+.delivery-flags { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.delivery-receipt { white-space: pre-wrap; overflow-wrap: anywhere; font: .73rem/1.65 ui-monospace, monospace; max-height: 420px; overflow: auto; padding: 14px; border: 1px solid var(--line); background: var(--bg); }
+@media (max-width: 600px) {
+  .owner-delivery { padding: 18px; }
+  .delivery-facts, .delivery-capabilities { grid-template-columns: minmax(0, 1fr); }
+}

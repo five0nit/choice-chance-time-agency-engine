@@ -24,8 +24,19 @@ RiskClass = Literal[
     "financial",
     "constitutional",
 ]
+OPERATOR_EFFECT_CLASSES = (
+    "shell",
+    "web",
+    "project_edit",
+    "deploy",
+    "public",
+    "credential",
+    "financial",
+    "high_consequence",
+)
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$")
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
+_DASHBOARD_CONTROL_SCHEMA = "cct.admin_dashboard.control.v1"
 _SCOPE = re.compile(r"^[A-Za-z0-9._/-]+(?:/\*\*)?$|^[*.]$")
 SENSITIVE_PARTS = {
     ".env",
@@ -641,6 +652,155 @@ class CapabilityRegistry:
             rows[str(event.payload["lease_id"])] = dict(event.payload)
         return rows
 
+    def _administrative_states(
+        self, events: list[Any] | None = None
+    ) -> dict[str, dict[str, Any]]:
+        """Project only structurally valid host-controlled capability pauses."""
+
+        rows: dict[str, dict[str, Any]] = {}
+        source = events if events is not None else self.store.events()
+        outer_fields = {
+            "schema_version",
+            "revision",
+            "capability",
+            "active",
+            "previous_active",
+            "previous_control_event_id",
+            "authority",
+            "control_receipt",
+        }
+        receipt_fields = {
+            "schema_version",
+            "action",
+            "capability",
+            "draft_id",
+            "principal_id",
+            "principal_profile_digest",
+            "session_id_sha256",
+            "confirmation_id",
+            "confirmation_sha256",
+            "preview_sha256",
+            "before_state_sha256",
+            "spec_digest",
+            "spec_revision",
+            "before_control_revision",
+            "after_control_revision",
+            "after_active",
+            "confirmation_issued_at",
+            "confirmation_expires_at",
+            "applied_at",
+            "lease_created",
+            "ticket_created",
+            "route_changed",
+            "external_effects",
+            "readback_required",
+        }
+        for event in source:
+            if event.kind != "capability.control.state_changed":
+                continue
+            payload = event.payload
+            _strict_keys(
+                payload,
+                allowed=outer_fields,
+                required=outer_fields,
+                name="controlled capability event",
+            )
+            if payload["schema_version"] != 1 or payload["authority"] != "operator":
+                raise ValueError("controlled capability event authority is invalid")
+            capability = _identifier(
+                "controlled capability", payload["capability"]
+            )
+            active = _boolean(
+                "controlled capability active", payload["active"]
+            )
+            previous_active = _boolean(
+                "controlled capability previous active", payload["previous_active"]
+            )
+            revision = _integer(
+                "controlled capability revision",
+                payload["revision"],
+                minimum=1,
+            )
+            receipt = payload["control_receipt"]
+            if not isinstance(receipt, Mapping):
+                raise ValueError("controlled capability receipt must be an object")
+            _strict_keys(
+                receipt,
+                allowed=receipt_fields,
+                required=receipt_fields,
+                name="controlled capability receipt",
+            )
+            if (
+                receipt["schema_version"] != _DASHBOARD_CONTROL_SCHEMA
+                or receipt["action"] != "SET_CAPABILITY_ADMINISTRATIVE_ACTIVE"
+                or receipt["capability"] != capability
+                or _boolean("receipt after_active", receipt["after_active"])
+                is not active
+                or _integer(
+                    "receipt before_control_revision",
+                    receipt["before_control_revision"],
+                )
+                != revision - 1
+                or _integer(
+                    "receipt after_control_revision",
+                    receipt["after_control_revision"],
+                    minimum=1,
+                )
+                != revision
+                or _boolean("receipt lease_created", receipt["lease_created"])
+                is not False
+                or _boolean("receipt ticket_created", receipt["ticket_created"])
+                is not False
+                or _boolean("receipt route_changed", receipt["route_changed"])
+                is not False
+                or _integer("receipt external_effects", receipt["external_effects"])
+                != 0
+                or _boolean("receipt readback_required", receipt["readback_required"])
+                is not True
+            ):
+                raise ValueError("controlled capability receipt contract is invalid")
+            for name in (
+                "principal_profile_digest",
+                "session_id_sha256",
+                "confirmation_sha256",
+                "preview_sha256",
+                "before_state_sha256",
+                "spec_digest",
+            ):
+                if not isinstance(receipt[name], str) or not _DIGEST.fullmatch(
+                    receipt[name]
+                ):
+                    raise ValueError(f"controlled capability {name} is invalid")
+            for name in ("draft_id", "principal_id", "confirmation_id"):
+                _identifier(f"controlled capability {name}", receipt[name])
+            _integer(
+                "receipt spec_revision", receipt["spec_revision"], minimum=1
+            )
+            issued_at = _timestamp(receipt["confirmation_issued_at"])
+            expires_at = _timestamp(receipt["confirmation_expires_at"])
+            applied_at = _timestamp(receipt["applied_at"])
+            if not issued_at <= applied_at < expires_at:
+                raise ValueError("controlled capability confirmation window is invalid")
+            previous = rows.get(capability)
+            expected_previous_active = (
+                bool(previous["active"]) if previous is not None else True
+            )
+            expected_previous_event_id = (
+                previous["event_id"] if previous is not None else None
+            )
+            if (
+                revision != (int(previous["revision"]) + 1 if previous else 1)
+                or previous_active is not expected_previous_active
+                or payload["previous_control_event_id"] != expected_previous_event_id
+            ):
+                raise ValueError("controlled capability history is not contiguous")
+            rows[capability] = {
+                "active": active,
+                "revision": revision,
+                "event_id": event.event_id,
+            }
+        return rows
+
     def register(
         self,
         spec: CapabilitySpec,
@@ -713,14 +873,27 @@ class CapabilityRegistry:
             "created": created,
         }
 
-    def grant(self, lease: CapabilityLease) -> dict[str, Any]:
+    def grant(
+        self,
+        lease: CapabilityLease,
+        *,
+        expected_principal_profile_digest: str | None = None,
+    ) -> dict[str, Any]:
         _authority(lease.issued_by)
+        if expected_principal_profile_digest is not None and (
+            not isinstance(expected_principal_profile_digest, str)
+            or not _DIGEST.fullmatch(expected_principal_profile_digest)
+        ):
+            raise ValueError("expected_principal_profile_digest must be SHA-256")
         specs = self._spec_rows()
         if lease.capability not in specs:
             raise KeyError(f"unknown capability: {lease.capability}")
         spec, spec_digest, _ = specs[lease.capability]
         if not spec.active:
             raise ValueError("cannot lease an inactive capability")
+        administrative = self._administrative_states().get(lease.capability)
+        if administrative is not None and administrative["active"] is not True:
+            raise ValueError("cannot lease an administratively paused capability")
         if _timestamp(lease.expires_at) <= _timestamp(self.store.clock()):
             raise ValueError("lease expires_at must be in the future")
         if lease.max_actions > spec.max_actions:
@@ -739,7 +912,49 @@ class CapabilityRegistry:
             "spec_digest": spec_digest,
             "lease": lease.as_payload(),
         }
-        event = self.store.append_once("capability.lease.granted", lease.id, payload)
+
+        def grant_guard(events: list[Any]) -> str | None:
+            current_spec = self._spec_rows(events).get(lease.capability)
+            if (
+                current_spec is None
+                or current_spec[1] != spec_digest
+                or current_spec[0].active is not True
+            ):
+                return "CAPABILITY_SPEC_CHANGED"
+            current_administrative = self._administrative_states(events).get(
+                lease.capability
+            )
+            if (
+                current_administrative is not None
+                and current_administrative["active"] is not True
+            ):
+                return "CAPABILITY_ADMINISTRATIVELY_PAUSED"
+            if expected_principal_profile_digest is not None:
+                principal = next(
+                    (
+                        event
+                        for event in reversed(events)
+                        if event.kind == "principal.profile.installed"
+                    ),
+                    None,
+                )
+                if (
+                    principal is None
+                    or principal.payload.get("profile_digest")
+                    != expected_principal_profile_digest
+                ):
+                    return "PRINCIPAL_PROFILE_CHANGED"
+            return None
+
+        event, _, rejection = self.store.append_once_result_guarded(
+            "capability.lease.granted",
+            lease.id,
+            payload,
+            guard=grant_guard,
+            strict_existing_payload=True,
+        )
+        if rejection is not None or event is None:
+            raise ValueError(f"capability lease rejected: {rejection}")
         return {**payload, "event_id": event.event_id}
 
     def revoke(self, lease_id: str, *, authority: str, reason: str) -> dict[str, Any]:
@@ -830,6 +1045,14 @@ class CapabilityRegistry:
         elif not spec.active:
             mode = "deny"
             reasons.append("CAPABILITY_INACTIVE")
+        elif (
+            self._administrative_states(events).get(
+                request.capability, {"active": True}
+            )["active"]
+            is not True
+        ):
+            mode = "deny"
+            reasons.append("CAPABILITY_ADMINISTRATIVELY_PAUSED")
         elif not any(_scope_allows(scope, request.scope) for scope in spec.scopes):
             mode = "deny"
             reasons.append("SCOPE_DENIED")
@@ -986,6 +1209,11 @@ class CapabilityRegistry:
             )
             if spec_row is None or not spec_row[0].active:
                 raise PermissionError("CAPABILITY_INACTIVE")
+            administrative = self._administrative_states(events).get(
+                request.capability
+            )
+            if administrative is not None and administrative["active"] is not True:
+                raise PermissionError("CAPABILITY_ADMINISTRATIVELY_PAUSED")
             if reservation.payload["decision"].get("spec_digest") != spec_row[1]:
                 raise PermissionError("CAPABILITY_SPEC_CHANGED")
             spec = spec_row[0]
@@ -1044,12 +1272,22 @@ class CapabilityRegistry:
         specs = self._spec_rows(events)
         leases = self._leases(events)
         revocations = self._revocations(events)
+        administrative = self._administrative_states(events)
         return {
             "specifications": {
                 name: {
                     **spec.as_payload(),
                     "spec_digest": digest,
                     "revision": revision,
+                    "administrative_active": administrative.get(
+                        name, {"active": True}
+                    )["active"],
+                    "administrative_revision": administrative.get(
+                        name, {"revision": 0}
+                    )["revision"],
+                    "administrative_event_id": administrative.get(
+                        name, {"event_id": None}
+                    )["event_id"],
                 }
                 for name, (spec, digest, revision) in sorted(specs.items())
             },
@@ -1098,6 +1336,73 @@ class CapabilityRegistry:
             ),
             "self_grant_enabled": False,
         }
+
+
+class OperatorCapabilityCatalog:
+    """Install host-owned, deny-by-default ceilings for operator effects."""
+
+    _RISK_CLASSES: dict[str, RiskClass] = {
+        "shell": "privileged",
+        "web": "observe",
+        "project_edit": "reversible",
+        "deploy": "privileged",
+        "public": "public",
+        "credential": "privileged",
+        "financial": "financial",
+        "high_consequence": "privileged",
+    }
+    _REVERSIBLE = {
+        "web": True,
+        "project_edit": True,
+    }
+    _VALUE_CEILING = {
+        "financial": 1_000_000_000_000,
+        "high_consequence": 1_000_000_000_000,
+    }
+
+    def __init__(self, store: EventStore) -> None:
+        self.store = store
+        self.registry = CapabilityRegistry(store)
+
+    @classmethod
+    def specifications(cls) -> tuple[CapabilitySpec, ...]:
+        return tuple(
+            CapabilitySpec(
+                name=f"operator.{effect_class}",
+                description=(
+                    f"Host-mediated {effect_class} effect. Authority requires an "
+                    "operator-issued scoped lease and one exact execution ticket."
+                ),
+                effect_kind=effect_class,
+                intent_domain="operator",
+                intent_action=effect_class,
+                risk_class=cls._RISK_CLASSES[effect_class],
+                scopes=(f"operator/{effect_class}/**",),
+                verifier_id=f"operator-{effect_class}-readback",
+                reversible=cls._REVERSIBLE.get(effect_class, False),
+                max_actions=128,
+                max_bytes=67_108_864,
+                max_value_microunits=cls._VALUE_CEILING.get(effect_class, 0),
+                default_mode="deny",
+            )
+            for effect_class in OPERATOR_EFFECT_CLASSES
+        )
+
+    def install(self) -> dict[str, dict[str, Any]]:
+        """Register fixed host specifications without creating any lease."""
+
+        installed: dict[str, dict[str, Any]] = {}
+        for effect_class, spec in zip(
+            OPERATOR_EFFECT_CLASSES, self.specifications(), strict=True
+        ):
+            installed[effect_class] = self.registry.register(
+                spec,
+                authority="host_adapter",
+                evidence=(
+                    f"host://cct/operator-capability-catalog/v1/{effect_class}",
+                ),
+            )
+        return installed
 
 
 class WorkspaceInspector:

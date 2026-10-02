@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cct-agency-engine"
-version = "0.9.0a8"
-description = "Choice-Chance-Time Agency Engine for verifiable autonomy that earns authority through proof"
+version = "0.9.0a22"
+description = "Choice-Chance-Time Agency Engine for verifiable autonomy within explicit authority"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -26,11 +26,26 @@ classifiers = [
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
+[project.optional-dependencies]
+test = ["pytest>=8", "PyYAML>=6"]
+firebase = [
+  "firebase-admin==7.5.0",
+  "google-cloud-firestore==2.30.0",
+]
+
 [project.scripts]
 cct-agent = "cct_agent.cli:main"
 cct-engine = "cct_agent.cli:main"
 cct-recurrent = "cct_agent.recurrent:main"
+cct-release-wake = "cct_agent.release_wake:main"
 cct-work-autonomy = "cct_agent.work_autonomy:main"
+cct-standing-autonomy = "cct_agent.standing_worker:main"
+cct-dashboard = "cct_agent.dashboard_server:main"
+cct-dashboard-bootstrap = "cct_agent.dashboard_controls:bootstrap_main"
+cct-firebase-bridge = "cct_agent.firebase_bridge:main"
+cct-owner-connection = "cct_agent.owner_connection:main"
+cct-owner-dialogue = "cct_agent.owner_dialogue:main"
+cct-owner-discovery = "cct_agent.owner_discovery:main"
 
 [project.entry-points."hermes_agent.plugins"]
 cct-agency = "hermes_plugin"
@@ -45,6 +60,7 @@ where = ["."]
 include = ["cct_agent*", "hermes_plugin*"]
 
 [tool.setuptools.package-data]
+cct_agent = ["dashboard_static/*.html", "dashboard_static/*.css", "dashboard_static/*.js"]
 hermes_plugin = ["plugin.yaml"]
 
 [tool.ruff]
@@ -56,3 +72,6 @@ select = ["E4", "E7", "E9", "F"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+  "operator_crash_matrix: all eight operator classes recover one crashed same-ticket effect across synchronized OS processes",
+]

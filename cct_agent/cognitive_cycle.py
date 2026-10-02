@@ -14,6 +14,7 @@ from .memory import MemoryManager
 from .metacognition import MetacognitiveMonitor
 from .models import Option
 from .self_model import SelfModel
+from .stalls import StallDetector
 from .store import canonical_json
 from .workspace import GlobalWorkspace, WorkspaceItem
 from .world_model import CounterfactualWorldModel
@@ -112,6 +113,7 @@ class CognitiveCycle:
         self.interoception = InteroceptiveState(self.store)
         self.memory = MemoryManager(self.store)
         self.metacognition = MetacognitiveMonitor(self.store, self.kernel)
+        self.stalls = StallDetector(self.store)
         self.consolidation_interval = consolidation_interval
         self.lesions = lesions
 
@@ -141,6 +143,28 @@ class CognitiveCycle:
                 }
             ).encode("utf-8")
         ).hexdigest()
+
+    @classmethod
+    def _observation_item(
+        cls, observation: Observation, *, logical_tick: int
+    ) -> WorkspaceItem:
+        return WorkspaceItem(
+            id=observation.id,
+            kind=observation.kind,
+            summary=observation.summary,
+            source=observation.source,
+            salience=observation.salience,
+            goal_relevance=observation.goal_relevance,
+            confidence=observation.confidence,
+            novelty=observation.novelty,
+            urgency=observation.urgency,
+            unresolved_conflict=observation.unresolved_conflict,
+            processing_cost=observation.processing_cost,
+            logical_tick=logical_tick,
+            evidence=observation.evidence,
+            content_digest=cls._observation_digest(observation),
+            initiative_authority=observation.initiative_authority,
+        )
 
     def run(
         self,
@@ -190,27 +214,12 @@ class CognitiveCycle:
             )
             interoception_payload = self.interoception.sample(signals, logical_tick=tick)
 
+        attention_profile = self.attention.regulatory_profile(interoception_payload)
         workspace_candidates: list[WorkspaceItem] = []
         for observation in observation_list:
             digest = self._observation_digest(observation)
             workspace_candidates.append(
-                WorkspaceItem(
-                    id=observation.id,
-                    kind=observation.kind,
-                    summary=observation.summary,
-                    source=observation.source,
-                    salience=observation.salience,
-                    goal_relevance=observation.goal_relevance,
-                    confidence=observation.confidence,
-                    novelty=observation.novelty,
-                    urgency=observation.urgency,
-                    unresolved_conflict=observation.unresolved_conflict,
-                    processing_cost=observation.processing_cost,
-                    logical_tick=tick,
-                    evidence=observation.evidence,
-                    content_digest=digest,
-                    initiative_authority=observation.initiative_authority,
-                )
+                self._observation_item(observation, logical_tick=tick)
             )
             if observation.proposition and "beliefs" not in self.lesions:
                 belief_id = "belief_" + sha256(
@@ -230,12 +239,15 @@ class CognitiveCycle:
         attended = (
             []
             if "attention" in self.lesions
-            else self.attention.select(workspace_candidates)
+            else self.attention.select(
+                workspace_candidates, profile=attention_profile
+            )
         )
         workspace_frame = self.workspace.broadcast(
             attended,
             logical_tick=tick,
             lesion="workspace" in self.lesions,
+            attention_policy=attention_profile,
         )
 
         option_list = list(options)
@@ -267,6 +279,14 @@ class CognitiveCycle:
             )
             intent_event_id = intent.event_id
 
+        stall = self.stalls.observe(
+            goal_id=goal_id,
+            decision=decision,
+            options=option_list,
+            candidates=workspace_candidates,
+            logical_tick=tick,
+        )
+
         memory_event_id: str | None = None
         if tick % self.consolidation_interval == 0 and "memory" not in self.lesions:
             memory_event_id = self.memory.consolidate(logical_tick=tick)["event_id"]
@@ -291,6 +311,11 @@ class CognitiveCycle:
             "decision_id": decision["decision_id"] if decision else None,
             "chosen_option_id": decision["chosen_option_id"] if decision else None,
             "intent_event_id": intent_event_id,
+            "stall_sample_event_id": stall.get("sample_event_id"),
+            "stall_event_id": stall.get("stall_event_id"),
+            "exploration_request_event_id": stall.get(
+                "exploration_request_event_id"
+            ),
             "memory_consolidation_event_id": memory_event_id,
             "previous_cycle_hash": previous_cycle_hash,
             "lesions": sorted(self.lesions),
@@ -314,6 +339,7 @@ class CognitiveCycle:
             "decision": decision,
             "workspace": workspace_frame,
             "interoception": interoception_payload,
+            "stall": stall,
         }
 
     def context(self, *, max_chars: int = 6000) -> str:
@@ -331,6 +357,25 @@ class CognitiveCycle:
                     f"- [{goal.source}] {goal.id}: {goal.statement}" for goal in goals
                 )
             )
+        exploration = self.store.latest("cognition.exploration.requested")
+        if exploration is not None:
+            goal_id_sha256 = str(exploration.payload.get("goal_id_sha256", ""))
+            target = next(
+                (
+                    goal
+                    for goal in goals
+                    if sha256(canonical_json(goal.id).encode("utf-8")).hexdigest()
+                    == goal_id_sha256
+                ),
+                None,
+            )
+            if target is not None:
+                sections.append(
+                    "Cognitive exploration request:\n"
+                    f"- Proposal-only exploration requested for goal {target.id}. "
+                    "Return structured provenance, assumptions, uncertainty, and a "
+                    "falsifiable discriminator; this does not grant effect authority."
+                )
         beliefs = self.beliefs.active()[:8]
         if beliefs:
             sections.append(
@@ -373,6 +418,7 @@ class CognitiveCycle:
             "workspace": self.workspace.latest_frame(),
             "active_belief_count": len(self.beliefs.active()),
             "self_model": self.self_model.snapshot(),
+            "stalls": self.stalls.status(),
             "context_chars": len(context),
             "context_estimated_tokens": (len(context) + 3) // 4,
             "context_token_budget": 1500,

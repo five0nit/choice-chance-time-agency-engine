@@ -238,6 +238,11 @@ def test_plugin_registers_non_model_gateway_hook_and_consumes_exact_reply(
     monkeypatch.setenv("CCT_IDENTITY", "gateway-reply-test")
     store, proposal, _secret_path = setup_store(tmp_path)
     record_delivery(store, proposal, binding=recipient_binding())
+    monkeypatch.setattr(
+        hermes_plugin,
+        "EventStore",
+        lambda path: EventStore(path, clock=lambda: NOW),
+    )
     context = PluginContext()
     hermes_plugin.register(context)
 

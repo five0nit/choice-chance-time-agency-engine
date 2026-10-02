@@ -72,7 +72,7 @@ Support updates confidence toward one. Contrary evidence reduces confidence and 
 
 ## Self-model
 
-Capabilities record availability, permission, confidence, evidence, and last test tick. The self-model can predict whether a capability will succeed. Real outcomes produce Brier error and update confidence.
+Capabilities record availability, permission, confidence, evidence, and last test tick. Historical verified autonomy receipts rebuild a read-only competence projection without rewriting old events. New typed autonomy runs create one idempotent pre-effect success prediction and resolve it once after independent completion evidence; this produces Brier error and updates confidence. All derived autonomy rows use `competence_estimate_only_no_effect_authority`: competence evidence cannot create a capability lease, permission, or effect authority.
 
 A self-description has operational value only when it can be wrong, tested, and corrected.
 
@@ -92,7 +92,7 @@ Free-form explanations are never treated as evidence for these values.
 
 ## Interoception
 
-Internal software signals include context pressure, error rate, goal progress, memory integrity, unresolved commitments, tool availability, prediction error, and latency pressure.
+Internal software signals are an exact allowlist: context pressure, error rate, goal progress, memory integrity, unresolved commitments, tool availability, prediction error, and latency pressure. Unknown signal names fail before `interoception.sampled` persistence.
 
 Derived regulatory variables:
 
@@ -101,7 +101,13 @@ Derived regulatory variables:
 - `uncertainty`: prediction and capability uncertainty;
 - `stability`: memory integrity and error control.
 
-They regulate attention. They are not claims of felt affect.
+They regulate attention through a deterministic `attention-regulation-v1` profile. Error, uncertainty, and unresolved-commitment pressure raise urgency/conflict emphasis; low progress raises goal relevance; context and latency pressure increase processing-cost penalties. Context pressure may reduce effective item and character capacity but can never expand either budget. Every `workspace.broadcast` records the exact effective weights, budgets, normalized signals, and source `interoception.sampled` event ID for replay. These variables remain software control signals, not claims of felt affect.
+
+## Governed stall detection
+
+When the same goal reaches repeated `NO_OP`, a fully blocked option frontier, or an unchanged unresolved-conflict evidence set, `StallDetector` hashes the structured state and records one proposal-only exploration request after the configured repeat threshold. New evidence changes the fingerprint and must establish its own repeat. Stall and exploration receipts retain only hashes, counts, fixed reason enums, and event references—never option descriptions, blocker prose, or workspace summaries.
+
+The request enters model context as a bounded packet requirement: provenance, assumptions, uncertainty, and a falsifiable discriminator. It does not promote a hypothesis to belief, select an action, change a capability lease, or grant effect authority.
 
 ## Memory
 

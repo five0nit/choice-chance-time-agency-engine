@@ -504,6 +504,36 @@ class ProactiveEngine:
         }
 
     def _render_message(self, packet: ThoughtPacket) -> str:
+        if packet.source == "self:clarification-dialogue-runner":
+            natural_reply = packet.open_questions[0] if packet.open_questions else ""
+            binding = packet.open_questions[1] if len(packet.open_questions) > 1 else ""
+            header = [
+                f"CCT clarification: {packet.observation}",
+                "Important details; CCT will not guess:",
+            ]
+            footer_lines = [
+                natural_reply,
+                "CCT persists allowlisted typed non-secret answers only and will never persist raw secrets.",
+                "Protected or authority answers require exact signed confirmation; effect authority still needs a separate scoped ticket or lease.",
+                binding,
+            ]
+            footer = "\n".join(footer_lines)
+            allowance = self.policy.max_message_chars - len(footer) - 1
+            question_lines = list(packet.hypotheses)
+            body = "\n".join([*header, *question_lines])
+            if len(body) > allowance and question_lines:
+                fixed = len("\n".join(header)) + len(question_lines) + 1
+                per_question = max(48, (allowance - fixed) // len(question_lines))
+                question_lines = [
+                    line
+                    if len(line) <= per_question
+                    else line[: per_question - 1].rstrip() + "…"
+                    for line in question_lines
+                ]
+                body = "\n".join([*header, *question_lines])
+            if len(body) > allowance:
+                body = body[: max(0, allowance - 1)].rstrip() + "…"
+            return body + "\n" + footer
         if packet.source == "self:pursuit-dialogue-runner":
             recommendation = packet.open_questions[0] if packet.open_questions else ""
             binding = packet.open_questions[1] if len(packet.open_questions) > 1 else ""

@@ -21,7 +21,13 @@ from typing import Any, Callable, Iterator, Sequence
 from .commands import BoundedCommandAdapter, CommandRequest, CommandSpec
 from .deployment import DeploymentTarget, LocalFakeDeploymentAdapter
 from .full_stack import FullStackEpisodeConfig
+from .interest_wake import (
+    InterestTaskExecutionReceipt,
+    InterestTaskRegistration,
+    InterestTaskWakeCoordinator,
+)
 from .kernel import AgencyKernel, resolve_constitution
+from .opportunity_handoff import OpportunityTaskHandoff, OpportunityTaskHandoffDenied
 from .patching import (
     ExpectedHashPatchAdapter,
     PatchRequest,
@@ -443,6 +449,79 @@ class _AuthenticatedMetadataResearchAdapter:
 FaultHook = Callable[[str, str], None]
 
 
+class _InstalledInterestTaskExecutor:
+    """Exact package-native executor behind one signed recurrent interest registration."""
+
+    def __init__(
+        self,
+        *,
+        coordinator: "InstalledRecurrentCoordinator",
+        store: EventStore,
+        owner: SelfGoalEpisodeCoordinator,
+        wake: RecurrentWake,
+        artifact: bytes,
+        status: bytes,
+        claim_fault_hook: FaultHook | None,
+        fault_hook: FaultHook | None,
+    ) -> None:
+        self.coordinator = coordinator
+        self.store = store
+        self.owner = owner
+        self.wake = wake
+        self.artifact = artifact
+        self.status = status
+        self.claim_fault_hook = claim_fault_hook
+        self.fault_hook = fault_hook
+
+    def execute(
+        self, *, opportunity_id: str, feedback_event_id: str
+    ) -> InterestTaskExecutionReceipt:
+        handoff = OpportunityTaskHandoff(
+            self.store,
+            principal_id=self.coordinator.principal_id,
+        )
+        preparation = handoff.prepare(
+            self.owner,
+            opportunity_id=opportunity_id,
+            feedback_event_id=feedback_event_id,
+            receipts=self.wake.receipts,
+            seed=self.wake.seed,
+        )
+        (
+            adapter_store,
+            research,
+            commands,
+            patching,
+            verifier,
+            deployment,
+            public,
+        ) = self.coordinator._adapters(
+            self.wake,
+            preparation.self_goal,
+            self.artifact,
+            self.status,
+            self.fault_hook,
+        )
+        if adapter_store.path.resolve() != self.store.path.resolve():
+            raise RecurrentCoordinatorDenied("RECURRENT_STORE_MISMATCH")
+        result = handoff.run_prepared(
+            self.owner,
+            preparation,
+            research=research,
+            commands=commands,
+            patching=patching,
+            verifier=verifier,
+            deployment=deployment,
+            public_actions=public,
+            claim_fault_hook=self.claim_fault_hook,
+            fault_hook=self.fault_hook,
+        )
+        return InterestTaskExecutionReceipt(
+            terminal_event_id=result.terminal_event_id,
+            replayed=result.replayed,
+        )
+
+
 class InstalledRecurrentCoordinator:
     """Run one exact package-native self-goal and expose one pending ranked proposal."""
 
@@ -622,6 +701,7 @@ class InstalledRecurrentCoordinator:
         preparation: Any,
         artifact: bytes,
         status: bytes,
+        command_effect_fault_hook: FaultHook | None = None,
     ) -> tuple[Any, ...]:
         key = _wake_key(wake.id)
         config = preparation.candidate.config
@@ -658,6 +738,22 @@ class InstalledRecurrentCoordinator:
                 ),
             ),
             allowed_executables=frozenset({sys.executable}),
+            recovery_probes={
+                f"build-{key}": lambda: _read_registered_workspace_file(
+                    self.paths.workspace_root,
+                    "dist/receipt.txt",
+                )
+                == artifact
+            },
+            effect_fault_hook=(
+                (
+                    lambda _request_id, claim_event_id: command_effect_fault_hook(
+                        "command-effect", claim_event_id
+                    )
+                )
+                if command_effect_fault_hook is not None
+                else None
+            ),
         )
 
         def patch_verifier(path: Path) -> PatchVerification:
@@ -762,6 +858,122 @@ class InstalledRecurrentCoordinator:
             public,
         )
 
+    def _interest_registration(
+        self,
+        *,
+        store: EventStore,
+        owner: SelfGoalEpisodeCoordinator,
+        wake: RecurrentWake,
+        artifact: bytes,
+        status: bytes,
+        claim_fault_hook: FaultHook | None,
+        fault_hook: FaultHook | None,
+    ) -> InterestTaskRegistration | None:
+        handoff = OpportunityTaskHandoff(store, principal_id=self.principal_id)
+        matches: list[tuple[Any, SelfGoalInputReceipt]] = []
+        for feedback in store.events("opportunity.initiative.feedback"):
+            opportunity_id = feedback.payload.get("opportunity_id")
+            if not isinstance(opportunity_id, str):
+                continue
+            try:
+                interest = handoff.inspect_interest(
+                    opportunity_id=opportunity_id,
+                    feedback_event_id=feedback.event_id,
+                )
+            except OpportunityTaskHandoffDenied:
+                continue
+            receipts = [
+                receipt
+                for receipt in wake.receipts
+                if receipt.kind == "opportunity"
+                and receipt.subject_id == interest.opportunity_id
+                and receipt.content_sha256 == interest.digest
+            ]
+            if len(receipts) == 1:
+                matches.append((interest, receipts[0]))
+        if len(matches) > 1:
+            raise RecurrentCoordinatorDenied("RECURRENT_INTEREST_REGISTRATION_AMBIGUOUS")
+        if not matches:
+            return None
+        interest, authority_receipt = matches[0]
+        return InterestTaskRegistration(
+            id="recurrent-interest-" + _wake_key(wake.id),
+            opportunity_id=interest.opportunity_id,
+            feedback_event_id=interest.feedback_event_id,
+            authority_receipt=authority_receipt,
+            executor=_InstalledInterestTaskExecutor(
+                coordinator=self,
+                store=store,
+                owner=owner,
+                wake=wake,
+                artifact=artifact,
+                status=status,
+                claim_fault_hook=claim_fault_hook,
+                fault_hook=fault_hook,
+            ),
+        )
+
+    def _run_registered_interest(
+        self,
+        *,
+        store: EventStore,
+        kernel: AgencyKernel,
+        registration: InterestTaskRegistration,
+        wake: RecurrentWake,
+    ) -> dict[str, Any]:
+        wake_result = InterestTaskWakeCoordinator(
+            store,
+            principal_id=self.principal_id,
+            state_root=self.paths.state_root / "interest-task-wake",
+            authentication_secret=self.authentication_secret,
+            registrations=(registration,),
+        ).run_once()
+        terminals = [
+            event
+            for event in store.events("opportunity.initiative.task_handoff.completed")
+            if event.payload.get("feedback_event_id") == registration.feedback_event_id
+        ]
+        if len(terminals) != 1:
+            raise RecurrentCoordinatorDenied("RECURRENT_INTEREST_TERMINAL_MISSING")
+        terminal = terminals[0]
+        handoff = store.event(str(terminal.payload.get("handoff_event_id", "")))
+        episode = store.event(str(terminal.payload.get("episode_terminal_event_id", "")))
+        if handoff is None or episode is None:
+            raise RecurrentCoordinatorDenied("RECURRENT_INTEREST_TERMINAL_INVALID")
+        priority = ProactiveRunner(store).run_once(time_bucket=wake.time_bucket)
+        goal_id = str(terminal.payload.get("goal_id", ""))
+        goal = kernel.goal(goal_id)
+        if goal is None:
+            raise RecurrentCoordinatorDenied("RECURRENT_GOAL_MISSING")
+        return {
+            "schema_version": 1,
+            "wake_id": wake.id,
+            "status": terminal.payload.get("status"),
+            "replayed": not bool(wake_result.get("executed")),
+            "goal_id": goal_id,
+            "goal_source": goal.source,
+            "candidate_id": handoff.payload.get("candidate_id"),
+            "terminal_event_id": terminal.event_id,
+            "episode_terminal_event_id": terminal.payload.get(
+                "episode_terminal_event_id"
+            ),
+            "outcome_event_id": terminal.payload.get("outcome_event_id"),
+            "reflection_event_id": terminal.payload.get("reflection_event_id"),
+            "completed_stage_ids": list(episode.payload.get("completed_stage_ids", [])),
+            "interest_task_wake": wake_result,
+            "priority_dialogue": {
+                "initiative_kind": priority.get("initiative_kind"),
+                "proposal_id": priority.get("proposal_id"),
+                "proposal_revision": priority.get("proposal_revision"),
+                "message": str(priority.get("message", "")),
+            },
+            "runtime": self.runtime,
+            "chain_valid": store.verify_chain().get("valid") is True,
+            "external_effects": 0,
+            "raw_producer_content_persisted": False,
+            "raw_chain_of_thought_stored": False,
+        }
+
     def run(
         self,
         wake: RecurrentWake,
@@ -792,6 +1004,22 @@ class InstalledRecurrentCoordinator:
                 authentication_secret=self.authentication_secret,
                 capability_name=f"self-goal.recurrent.{_wake_key(wake.id)}",
             )
+            registration = self._interest_registration(
+                store=store,
+                owner=owner,
+                wake=wake,
+                artifact=artifact,
+                status=status,
+                claim_fault_hook=claim_fault_hook,
+                fault_hook=fault_hook,
+            )
+            if registration is not None:
+                return self._run_registered_interest(
+                    store=store,
+                    kernel=kernel,
+                    registration=registration,
+                    wake=wake,
+                )
             preparation = owner.prepare(wake.receipts, seed=wake.seed)
             (
                 adapter_store,
@@ -801,7 +1029,13 @@ class InstalledRecurrentCoordinator:
                 verifier,
                 deployment,
                 public,
-            ) = self._adapters(wake, preparation, artifact, status)
+            ) = self._adapters(
+                wake,
+                preparation,
+                artifact,
+                status,
+                fault_hook,
+            )
             if adapter_store.path.resolve() != store.path.resolve():
                 raise RecurrentCoordinatorDenied("RECURRENT_STORE_MISMATCH")
             episode = owner.run_prepared(

@@ -24,6 +24,7 @@ from typing import Any, Iterator, Mapping, Sequence
 
 from .kernel import AgencyKernel, NO_OP_ID
 from .models import Option
+from .self_model import SelfModel
 from .store import Event, EventStore, canonical_json
 
 try:  # pragma: no cover - Linux/WSL is the production target.
@@ -1038,7 +1039,28 @@ class AutonomyEngine:
                 {"decision_id": selection["decision_id"], "plan_id": plan_id}
             )[:20]
             _identifier("run id", identifier)
-            start_payload = {
+            capability_name = str(opportunity["capability"])
+            self_model = SelfModel(
+                self.store, identity=self.kernel.constitution.identity
+            )
+            default_prediction_id = "pred_autonomy_" + _digest_json(
+                {"run_id": identifier, "capability": capability_name}
+            )[:24]
+            existing_prediction = self_model.prediction(default_prediction_id)
+            capability_snapshot = self_model.snapshot()["capabilities"].get(
+                capability_name
+            )
+            predicted_success = (
+                float(existing_prediction["predicted_success"])
+                if existing_prediction is not None
+                else float(
+                    (capability_snapshot or {}).get(
+                        "confidence",
+                        self._capability_learning(capability_name)["quality"],
+                    )
+                )
+            )
+            core_start_payload = {
                 "run_id": identifier,
                 "decision_id": selection["decision_id"],
                 "opportunity_id": opportunity_id,
@@ -1052,13 +1074,60 @@ class AutonomyEngine:
                 ),
             }
             if resumed_start is not None:
-                if canonical_json(resumed_start.payload) != canonical_json(start_payload):
+                if any(
+                    resumed_start.payload.get(key) != value
+                    for key, value in core_start_payload.items()
+                ):
                     raise ValueError("run resume state does not match its recorded plan")
+                start_payload = dict(resumed_start.payload)
+                prediction_id = str(
+                    start_payload.get("self_prediction_id", default_prediction_id)
+                )
+                if existing_prediction is None:
+                    existing_prediction = self_model.prediction(prediction_id)
+                if existing_prediction is not None:
+                    predicted_success = float(existing_prediction["predicted_success"])
+                else:
+                    predicted_success = float(
+                        start_payload.get("predicted_success", predicted_success)
+                    )
                 started = resumed_start
             else:
+                prediction_id = default_prediction_id
+                start_payload = {
+                    **core_start_payload,
+                    "self_prediction_id": prediction_id,
+                    "predicted_success": round(predicted_success, 12),
+                    "competence_permission": SelfModel.COMPETENCE_ONLY_PERMISSION,
+                    "effect_authority_granted_by_prediction": False,
+                }
                 started = self.store.append_once(
                     "autonomy.run.started", identifier, start_payload
                 )
+            current_capabilities = self_model.snapshot()["capabilities"]
+            if capability_name not in current_capabilities:
+                self_model.declare_capability(
+                    name=capability_name,
+                    available=True,
+                    confidence=predicted_success,
+                    permission=SelfModel.COMPETENCE_ONLY_PERMISSION,
+                    evidence=(
+                        f"event:{plan_event.event_id}",
+                        f"opportunity:{opportunity_id}",
+                    ),
+                    logical_tick=started.seq,
+                )
+            prediction = self_model.predict_once(
+                prediction_id=prediction_id,
+                capability=capability_name,
+                predicted_success=predicted_success,
+                logical_tick=started.seq,
+                evidence=(
+                    f"event:{started.event_id}",
+                    f"event:{plan_event.event_id}",
+                ),
+                source_run_id=identifier,
+            )
             recorded_level = int(start_payload["authority"]["level"])
             if recorded_level not in _AUTHORITY_LEVELS:
                 raise ValueError("run recorded an unknown authority level")
@@ -1114,6 +1183,11 @@ class AutonomyEngine:
                 "realized_utility": round(realized, 12),
                 "outcome_event_id": outcome.event_id,
                 "started_event_id": started.event_id,
+                "self_prediction_id": prediction_id,
+                "self_prediction_event_id": prediction["event_id"],
+                "predicted_success": round(predicted_success, 12),
+                "competence_permission": SelfModel.COMPETENCE_ONLY_PERMISSION,
+                "effect_authority_granted_by_prediction": False,
                 "evidence_event_ids": [execution.event_id],
             }
             completed = self.store.append_once(
@@ -1136,6 +1210,28 @@ class AutonomyEngine:
         success = bool(completion["success"])
         desired_opportunity = "completed" if success else "failed"
         desired_objective = "completed" if success else "paused"
+        prediction_id = completion.get("self_prediction_id")
+        if isinstance(prediction_id, str) and prediction_id:
+            completed_event = self._run_event(identifier, "autonomy.run.completed")
+            if completed_event is None:
+                raise ValueError("self-model resolution requires a completed run receipt")
+            verified_success = (
+                success
+                and completion.get("verified") is True
+                and int(completion.get("receipt_count", 0)) > 0
+            )
+            SelfModel(
+                self.store, identity=self.kernel.constitution.identity
+            ).record_result_once(
+                prediction_id=prediction_id,
+                succeeded=verified_success,
+                evidence=(
+                    f"event:{completed_event.event_id}",
+                    f"event:{completion['outcome_event_id']}",
+                ),
+                logical_tick=completed_event.seq,
+                source_run_id=identifier,
+            )
         self.store.append_once(
             "autonomy.opportunity.status_changed",
             identifier,

@@ -215,6 +215,53 @@ def test_claim_without_completion_fails_closed_and_never_reexecutes(
     assert not store.events("command.execution.completed")
 
 
+def test_claimed_command_adopts_exact_host_readback_without_reexecution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = tmp_path / "workspace-readback"
+    workspace.mkdir()
+    effect = workspace / "effect.txt"
+    spec = command_spec(
+        workspace,
+        code="from pathlib import Path; import sys; Path(sys.argv[1]).write_text('verified')",
+        arguments=(str(effect),),
+    )
+    store = EventStore(tmp_path / "readback-crash.sqlite")
+    request = CommandRequest(id="readback-crash-request", command_id=spec.id)
+    commands = BoundedCommandAdapter(
+        store,
+        workspace_root=workspace,
+        commands=(spec,),
+        allowed_executables=frozenset({sys.executable}),
+        recovery_probes={spec.id: lambda: effect.read_text() == "verified"},
+    )
+
+    def effect_then_crash(*args: Any, **kwargs: Any) -> Any:
+        effect.write_text("verified", encoding="utf-8")
+        raise SystemExit("crash-after-command-effect-before-receipt")
+
+    monkeypatch.setattr(commands, "_execute_claimed", effect_then_crash)
+    with pytest.raises(SystemExit, match="crash-after-command-effect-before-receipt"):
+        commands.execute(request)
+
+    resumed = BoundedCommandAdapter(
+        EventStore(store.path),
+        workspace_root=workspace,
+        commands=(spec,),
+        allowed_executables=frozenset({sys.executable}),
+        recovery_probes={spec.id: lambda: effect.read_text() == "verified"},
+    ).execute(request)
+
+    assert resumed.replayed is True
+    assert resumed.exit_status == 0
+    assert resumed.termination_reason == "exited"
+    assert effect.read_text() == "verified"
+    assert len(store.events("command.execution.claimed")) == 1
+    assert len(store.events("command.execution.readback_adopted")) == 1
+    assert len(store.events("command.execution.completed")) == 1
+    assert store.verify_chain()["valid"] is True
+
+
 def _concurrent_worker(
     store_path: str,
     workspace_path: str,

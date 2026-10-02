@@ -1,0 +1,114 @@
+{
+  "schema_version": "cct.admin_dashboard.snapshot.v1",
+  "generated_at": "2026-09-12T11:49:30.341403+00:00",
+  "mode": "READ_ONLY",
+  "outcome": {
+    "state": "VERIFIED",
+    "headline": "Control-plane state verified",
+    "detail": "Current permissions, access routes, and automation receipts are readable.",
+    "next_action": "No operator action is currently required."
+  },
+  "summary": {
+    "chain_valid": true,
+    "event_count": 0,
+    "active_goals": 0,
+    "capability_count": 0,
+    "active_leases": 0,
+    "pending_approvals": 0,
+    "connected_access_routes": 0,
+    "external_effects": 0
+  },
+  "permissions": [],
+  "access": [],
+  "automations": [
+    {
+      "id": "proactive-updates",
+      "label": "Proactive updates",
+      "state": "NOT_CONFIGURED",
+      "observed_events": 0,
+      "runs": 0,
+      "verified_runs": 0,
+      "failed_runs": 0,
+      "last_event_id": null,
+      "last_changed_at": null,
+      "control_state": "PREVIEW_ONLY"
+    },
+    {
+      "id": "standing-autonomy",
+      "label": "Standing autonomy",
+      "state": "NOT_CONFIGURED",
+      "observed_events": 0,
+      "runs": 0,
+      "verified_runs": 0,
+      "failed_runs": 0,
+      "last_event_id": null,
+      "last_changed_at": null,
+      "control_state": "PREVIEW_ONLY"
+    },
+    {
+      "id": "continuity-sensor",
+      "label": "Continuity sensor",
+      "state": "NOT_CONFIGURED",
+      "observed_events": 0,
+      "runs": 0,
+      "verified_runs": 0,
+      "failed_runs": 0,
+      "last_event_id": null,
+      "last_changed_at": null,
+      "control_state": "PREVIEW_ONLY"
+    },
+    {
+      "id": "work-autonomy",
+      "label": "Local work autonomy",
+      "state": "NOT_CONFIGURED",
+      "observed_events": 0,
+      "runs": 0,
+      "verified_runs": 0,
+      "failed_runs": 0,
+      "last_event_id": null,
+      "last_changed_at": null,
+      "control_state": "PREVIEW_ONLY"
+    }
+  ],
+  "approvals": [
+    {
+      "request_id": "qa-fixture-choice",
+      "state": "ACTION_REQUIRED",
+      "revision": 1,
+      "question_count": 1,
+      "presented_at": "2026-09-12T11:49:30.341403+00:00",
+      "control_state": "PREVIEW_ONLY"
+    }
+  ],
+  "goals": [
+    {
+      "goal_id": "qa-fixture-goal",
+      "title": "QA fixture: review one workflow",
+      "status": "active"
+    }
+  ],
+  "audit": {
+    "text": "VERIFIED: Event chain is valid. No human-relevant activity has been recorded.",
+    "rows": [],
+    "chain": {
+      "valid": true,
+      "event_count": 0,
+      "head_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "errors": []
+    }
+  },
+  "emergency": {
+    "kill_switch_active": false,
+    "active_trip_id": null,
+    "active_trip_event_id": null,
+    "latest_transition_event_id": null,
+    "model_clear_enabled": false,
+    "control_state": "PREVIEW_ONLY"
+  },
+  "privacy": {
+    "raw_event_payloads_exposed": false,
+    "raw_conversation_content_exposed": false,
+    "credential_bytes_exposed": false,
+    "database_path_exposed": false
+  }
+}

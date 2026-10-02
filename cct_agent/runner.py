@@ -5,6 +5,7 @@ from __future__ import annotations
 from hashlib import sha256
 from typing import Any
 
+from .clarification_dialogue import ClarificationDialogue
 from .initiative import InitiativeBridge, ProactiveFeedback
 from .opportunity_initiative import OpportunityInitiative
 from .proactive import InitiationSignals, ProactiveEngine, ThoughtPacket
@@ -31,6 +32,7 @@ class ProactiveRunner:
         self.store = store
         self.topics = TopicStore(store)
         self.engine = ProactiveEngine(store)
+        self.clarifications = ClarificationDialogue(store)
         self.pursuits = PursuitDialogue(store)
         self.opportunities = OpportunityInitiative(store, proactive=self.engine)
         self.bridge = InitiativeBridge(store)
@@ -105,6 +107,17 @@ class ProactiveRunner:
     ) -> dict[str, Any]:
         promotion = self.bridge.promote()
         wake_index = self.store.allocate_counter("proactive_wake")
+        clarification = self.clarifications.run_once(
+            wake_index=wake_index,
+            time_bucket=time_bucket,
+        )
+        if clarification.get("candidate_found"):
+            return {
+                **clarification,
+                "initiative_kind": "clarification_dialogue",
+                "llm_calls": 0,
+                "promotion": promotion,
+            }
         pursuit = self.pursuits.run_once(
             wake_index=wake_index,
             time_bucket=time_bucket,
@@ -322,6 +335,7 @@ class ProactiveRunner:
                 self.store.events("proactive.runner.completed")
             ),
             "engine": self.engine.status(),
+            "clarification_dialogue": self.clarifications.status(),
             "pursuit_dialogue": self.pursuits.status(),
             "opportunity_initiative": self.opportunities.status(),
             "initiative_bridge": self.bridge.status(),
@@ -330,14 +344,17 @@ class ProactiveRunner:
         }
 
     def context(self, *, max_chars: int = 3000) -> str:
+        clarification = self.clarifications.context(max_chars=max_chars)
         topics = [
             topic
             for topic in self.topics.all(status="open")
             if _topic_proactive_eligible(topic)
         ][-3:]
-        if not topics:
-            return ""
-        lines = ["Proactive conversation continuity (structured; no hidden reasoning):"]
+        lines: list[str] = []
+        if clarification:
+            lines.append(clarification)
+        if topics:
+            lines.append("Proactive conversation continuity (structured; no hidden reasoning):")
         for topic in topics:
             lines.append(
                 f"- [{topic.id}] {topic.summary} "
@@ -345,5 +362,5 @@ class ProactiveRunner:
             )
             if topic.questions:
                 lines.append(f"  open question: {topic.questions[0]}")
-        rendered = "\n".join(lines)
+        rendered = "\n\n".join(lines)
         return rendered[:max_chars]

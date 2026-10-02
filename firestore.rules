@@ -1,0 +1,396 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isOwner() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email == 'owner@example.invalid'
+        && request.auth.uid == 'replace-with-owner-firebase-uid'
+        && request.auth.token.firebase.sign_in_provider == 'google.com';
+    }
+
+    function validRequestIdentity(requestId) {
+      return request.resource.data.requestId == requestId
+        && request.resource.data.requestId.matches('^req-[A-Za-z0-9_-]{16,80}$')
+        && request.resource.data.schemaVersion == 'cct.firebase_control_request.v1'
+        && request.resource.data.action == 'SET_CAPABILITY_ADMINISTRATIVE_ACTIVE'
+        && request.resource.data.capability == 'operator.web'
+        && request.resource.data.active is bool
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.ownerEmail == 'owner@example.invalid'
+        && request.resource.data.idToken is string
+        && request.resource.data.idToken.size() >= 64
+        && request.resource.data.idToken.size() <= 8192
+        && request.resource.data.idToken.matches(
+          '^[A-Za-z0-9_-]+[.][A-Za-z0-9_-]+[.][A-Za-z0-9_-]+$'
+        )
+        && request.resource.data.state == 'PENDING'
+        && request.resource.data.createdAt == request.time;
+    }
+
+    function validPreviewRequest(requestId) {
+      return request.resource.data.keys().hasOnly([
+          'schemaVersion', 'requestId', 'kind', 'action', 'capability', 'active',
+          'ownerUid', 'ownerEmail', 'idToken', 'state', 'createdAt'
+        ])
+        && request.resource.data.kind == 'PREVIEW'
+        && validRequestIdentity(requestId);
+    }
+
+    function validApplyRequest(requestId) {
+      let parent = request.resource.data.parentRequestId;
+      let receiptPath = /databases/$(database)/documents/cct_control_receipts/$(parent);
+      return request.resource.data.keys().hasOnly([
+          'schemaVersion', 'requestId', 'kind', 'action', 'capability', 'active',
+          'ownerUid', 'ownerEmail', 'idToken', 'state', 'createdAt', 'parentRequestId',
+          'previewSha256'
+        ])
+        && request.resource.data.kind == 'APPLY'
+        && validRequestIdentity(requestId)
+        && parent.matches('^req-[A-Za-z0-9_-]{16,80}$')
+        && request.resource.data.previewSha256.matches('^[0-9a-f]{64}$')
+        && exists(receiptPath)
+        && get(receiptPath).data.status == 'PREVIEW_READY'
+        && get(receiptPath).data.ownerUid == request.auth.uid
+        && get(receiptPath).data.ownerEmail == 'owner@example.invalid'
+        && get(receiptPath).data.previewSha256 == request.resource.data.previewSha256;
+    }
+
+    // Owner intent only. This document never grants an execution lease or ticket.
+    function validWorkspace() {
+      let w = request.resource.data;
+      let p = w.permissions;
+      let a = w.answers;
+      return w.keys().hasOnly([
+          'schemaVersion', 'ownerUid', 'revision', 'updatedAt', 'learningEnabled',
+          'permissions', 'autonomyMode', 'autonomyAcknowledged', 'answers', 'decisions'
+        ])
+        && w.schemaVersion == 'cct.owner_workspace.v1'
+        && w.ownerUid == request.auth.uid
+        && w.revision is int && w.revision >= 1 && w.revision <= 2147483647
+        && w.updatedAt == request.time
+        && w.learningEnabled is bool
+        && w.autonomyMode in ['supervised', 'full']
+        && w.autonomyAcknowledged is bool
+        && (w.autonomyMode != 'full' || w.autonomyAcknowledged == true)
+        && p is map
+        && p.keys().hasOnly(['credentialAccess', 'webResearch', 'workspaceRead',
+                            'workspaceWrite', 'externalMessages', 'payments'])
+        && p.credentialAccess is bool && p.webResearch is bool
+        && p.workspaceRead is bool && p.workspaceWrite is bool
+        && p.externalMessages is bool && p.payments is bool
+        && a is map
+        && a.keys().hasOnly(['focus', 'horizon', 'risk', 'interruptions', 'success', 'nextStep'])
+        && a.focus in ['', 'revenue', 'career', 'systems', 'creative']
+        && a.horizon in ['', 'today', 'week', 'month']
+        && a.risk in ['', 'conservative', 'balanced', 'experimental']
+        && a.interruptions in ['', 'always', 'milestones', 'blockers']
+        && a.success in ['', 'revenue', 'shipped', 'learning', 'timeSaved']
+        && a.nextStep in ['', 'research', 'build', 'repair', 'review']
+        && w.decisions is map && w.decisions.size() <= 60
+        && w.decisions.values().hasOnly(['approve', 'reject', 'later']);
+    }
+
+    match /cct_workspace/current {
+      allow get: if isOwner();
+      allow create: if isOwner() && validWorkspace() && request.resource.data.revision == 1;
+      allow update: if isOwner() && validWorkspace()
+        && request.resource.data.revision == resource.data.revision + 1;
+      allow list, delete: if false;
+    }
+
+    match /cct_dashboard/current {
+      allow get: if isOwner()
+        && resource.data.ownerEmail == 'owner@example.invalid'
+        && (!('ownerUid' in resource.data) || resource.data.ownerUid == request.auth.uid);
+      allow list, create, update, delete: if false;
+    }
+
+    match /cct_bridge_status/current {
+      allow get: if isOwner();
+      allow list, create, update, delete: if false;
+    }
+
+    match /cct_control_requests/{requestId} {
+      allow get: if isOwner()
+        && resource.data.ownerUid == request.auth.uid
+        && resource.data.ownerEmail == 'owner@example.invalid';
+      allow list: if false;
+      allow create: if isOwner()
+        && (validPreviewRequest(requestId) || validApplyRequest(requestId));
+      allow update, delete: if false;
+    }
+
+    match /cct_control_receipts/{receiptId} {
+      allow get: if isOwner()
+        && resource.data.ownerUid == request.auth.uid
+        && resource.data.ownerEmail == 'owner@example.invalid';
+      allow list, create, update, delete: if false;
+    }
+
+    // Isolated owner connection: replies are data, never execution approvals.
+    match /cct_owner_runtime/current {
+      allow get: if isOwner();
+      allow list, create, update, delete: if false;
+    }
+
+    match /cct_owner_messages/{messageId} {
+      allow get: if isOwner();
+      allow list: if isOwner() && request.query.limit <= 20;
+      allow create, update, delete: if false;
+    }
+
+    match /cct_owner_replies/{messageId} {
+      function validReply() {
+        let r = request.resource.data;
+        let parent = get(/databases/$(database)/documents/cct_owner_messages/$(messageId)).data;
+        return messageId.matches('^msg-[0-9a-f]{32}$')
+          && r.keys().hasOnly(['schemaVersion', 'ownerUid', 'messageId', 'text', 'createdAt'])
+          && r.schemaVersion == 'cct.owner_reply.v1'
+          && r.ownerUid == request.auth.uid && r.messageId == messageId
+          && r.text is string && r.text.size() >= 1 && r.text.size() <= 2000
+          && r.text.matches('[\\s\\S]*[^\\s][\\s\\S]*')
+          && r.createdAt == request.time
+          && parent.ownerUid == request.auth.uid
+          && parent.kind == 'ask' && parent.state == 'SENT'
+          && parent.replyDeadline is timestamp && request.time < parent.replyDeadline
+          && parent.schemaVersion == 'cct.owner_message.v1';
+      }
+      allow get: if isOwner();
+      allow create: if isOwner() && validReply();
+      allow list, update, delete: if false;
+    }
+
+    // Continuous discovery: the host alone writes questions and understanding.
+    // Owner answers are immutable evidence, never execution authority.
+    match /cct_discovery/current {
+      allow get: if isOwner();
+      allow list, create, update, delete: if false;
+    }
+
+    // Host-owned research/plan receipts. Reading a proposal grants no authority.
+    match /cct_owner_work/current {
+      allow get: if isOwner();
+      allow list, create, update, delete: if false;
+    }
+
+    // Host-owned delivery projection. Full-mode settings grant no browser writes.
+    match /cct_owner_delivery/current {
+      allow get: if isOwner()
+        && (!exists(/databases/$(database)/documents/cct_owner_delivery/current)
+            || resource.data.ownerUid == request.auth.uid);
+      allow list, create, update, delete: if false;
+    }
+
+    // Autonomous builds: owner intent is separate from host runtime receipts.
+    function validBuildControls() {
+      let r = request.resource.data;
+      let fields = ['schemaVersion', 'ownerUid', 'revision', 'maxDailyJobs',
+                    'maxDailyProviderCalls', 'maxDailyToolCalls', 'updatedAt'];
+      let host = get(/databases/$(database)/documents/cct_owner_build_controls_status/current).data;
+      return r.keys().hasAll(fields) && r.keys().hasOnly(fields)
+        && r.schemaVersion == 'cct.owner_build_controls.v1'
+        && r.ownerUid == request.auth.uid
+        && r.revision is int && r.revision >= 1 && r.revision <= 2147483647
+        && r.maxDailyJobs is int && r.maxDailyJobs >= 1 && r.maxDailyJobs <= 4
+        && r.maxDailyProviderCalls is int && r.maxDailyProviderCalls >= 1 && r.maxDailyProviderCalls <= 20
+        && r.maxDailyToolCalls is int && r.maxDailyToolCalls >= 1 && r.maxDailyToolCalls <= 12
+        && r.updatedAt is timestamp && r.updatedAt == request.time
+        && host.schemaVersion == 'cct.owner_build_controls_status.v1'
+        && host.ownerUid == request.auth.uid
+        && r.maxDailyJobs <= host.ceilings.maxDailyJobs
+        && r.maxDailyProviderCalls <= host.ceilings.maxDailyProviderCalls
+        && r.maxDailyToolCalls <= host.ceilings.maxDailyToolCalls;
+    }
+
+    function validBuildRequest(requestId) {
+      let r = request.resource.data;
+      let fields = ['schemaVersion', 'ownerUid', 'requestId', 'parentBuildId',
+                    'parentDigest', 'action', 'instructions', 'maxProviderCalls',
+                    'maxToolCalls', 'createdAt', 'expiresAt', 'controlRevision'];
+      let parent = get(/databases/$(database)/documents/cct_owner_builds/$(r.parentBuildId)).data;
+      let host = get(/databases/$(database)/documents/cct_owner_build_controls_status/current).data;
+      let controlsPath = /databases/$(database)/documents/cct_owner_build_controls/current;
+      let workspace = getAfter(/databases/$(database)/documents/cct_workspace/current).data;
+      return r.keys().hasAll(fields) && r.keys().hasOnly(fields)
+        && requestId.matches('^[A-Za-z0-9_-]{1,100}$') && r.requestId == requestId
+        && r.schemaVersion == 'cct.owner_build_request.v1'
+        && r.ownerUid == request.auth.uid
+        && r.parentBuildId is string && r.parentBuildId.matches('^[A-Za-z0-9_-]{1,100}$')
+        && r.parentDigest is string && r.parentDigest.matches('^[0-9a-f]{64}$')
+        && r.action in ['upgrade', 'steer', 'discover', 'archive', 'restore']
+        && r.instructions is string && r.instructions.size() <= 2000
+        && (r.action != 'steer' || r.instructions.matches('[\\s\\S]*[^\\s][\\s\\S]*'))
+        && r.maxProviderCalls is int && r.maxProviderCalls >= 1 && r.maxProviderCalls <= 20
+        && r.maxToolCalls is int && r.maxToolCalls >= 1 && r.maxToolCalls <= 12
+        && r.createdAt is timestamp && r.createdAt == request.time
+        && r.expiresAt is timestamp && r.expiresAt > request.time
+        && r.expiresAt <= request.time + duration.value(7, 'd')
+        && r.controlRevision is int && r.controlRevision >= 0
+        && r.controlRevision <= 2147483647
+        && host.schemaVersion == 'cct.owner_build_controls_status.v1'
+        && host.ownerUid == request.auth.uid && host.effectiveRevision == r.controlRevision
+        && ((!existsAfter(controlsPath) && r.controlRevision == 0)
+            || (existsAfter(controlsPath) && getAfter(controlsPath).data.revision == r.controlRevision))
+        && parent.schemaVersion == 'cct.owner_build.v1' && parent.ownerUid == request.auth.uid
+        && parent.buildId == r.parentBuildId && parent.bundleDigest == r.parentDigest
+        && parent.status == 'COMPLETE'
+        && workspace.ownerUid == request.auth.uid && workspace.learningEnabled == true
+        && workspace.autonomyMode == 'full' && workspace.autonomyAcknowledged == true
+        && workspace.permissions.workspaceRead == true && workspace.permissions.workspaceWrite == true;
+    }
+
+    match /cct_owner_builds/{buildId} {
+      allow get: if isOwner() && resource.data.ownerUid == request.auth.uid;
+      allow list: if isOwner() && request.query.limit <= 100
+        && resource.data.ownerUid == request.auth.uid;
+      allow create, update, delete: if false;
+    }
+
+    match /cct_owner_build_controls/current {
+      allow get: if isOwner() && (!exists(/databases/$(database)/documents/cct_owner_build_controls/current)
+        || resource.data.ownerUid == request.auth.uid);
+      allow create: if isOwner() && validBuildControls() && request.resource.data.revision == 1;
+      allow update: if isOwner() && resource.data.ownerUid == request.auth.uid && validBuildControls()
+        && request.resource.data.revision == resource.data.revision + 1;
+      allow list, delete: if false;
+    }
+
+    match /cct_owner_build_controls_status/current {
+      allow get: if isOwner() && (!exists(/databases/$(database)/documents/cct_owner_build_controls_status/current)
+        || resource.data.ownerUid == request.auth.uid);
+      allow list, create, update, delete: if false;
+    }
+
+    match /cct_owner_build_requests/{requestId} {
+      allow get: if isOwner() && (!exists(/databases/$(database)/documents/cct_owner_build_requests/$(requestId))
+        || resource.data.ownerUid == request.auth.uid);
+      allow list: if isOwner() && request.query.limit <= 100
+        && resource.data.ownerUid == request.auth.uid;
+      allow create: if isOwner() && validBuildRequest(requestId);
+      allow update, delete: if false;
+    }
+
+    match /cct_owner_build_request_status/{requestId} {
+      allow get: if isOwner() && (!exists(/databases/$(database)/documents/cct_owner_build_request_status/$(requestId))
+        || resource.data.ownerUid == request.auth.uid);
+      allow list: if isOwner() && request.query.limit <= 100
+        && resource.data.ownerUid == request.auth.uid;
+      allow create, update, delete: if false;
+    }
+
+    // Explicit promotion authorizes only the bounded public-research lane.
+    match /cct_work_requests/{requestId} {
+      function validPromotion() {
+        let r = request.resource.data;
+        let host = get(/databases/$(database)/documents/cct_discovery/current).data;
+        let workspace = get(/databases/$(database)/documents/cct_workspace/current).data;
+        let fields = ['schemaVersion', 'ownerUid', 'conversationId', 'turnId',
+                      'ideaIndex', 'idea', 'scope', 'state', 'createdAt'];
+        return r.keys().hasAll(fields) && r.keys().hasOnly(fields)
+          && requestId.matches('^promote-[0-9a-f]{32}-[0-3]$')
+          && r.schemaVersion == 'cct.work_request.v1' && r.ownerUid == request.auth.uid
+          && r.scope == 'PUBLIC_RESEARCH_PRIVATE_REPORT' && r.state == 'PENDING'
+          && r.createdAt is timestamp && r.createdAt == request.time
+          && r.turnId is string && r.turnId.matches('^q-[0-9a-f]{32}$')
+          && r.ideaIndex is int && r.ideaIndex >= 0 && r.ideaIndex < 4
+          && requestId == 'promote-' + r.turnId.replace('^q-', '') + '-' + string(r.ideaIndex)
+          && host.schemaVersion == 'cct.discovery.v1' && host.ownerUid == request.auth.uid
+          && r.conversationId == host.conversationId && r.turnId == host.question.id
+          && r.ideaIndex < host.workIdeas.size() && r.idea == host.workIdeas[r.ideaIndex]
+          && r.idea.readiness == 'DRAFT_ONLY'
+          && workspace.ownerUid == request.auth.uid && workspace.learningEnabled == true;
+      }
+      allow get: if isOwner() && requestId.matches('^promote-[0-9a-f]{32}-[0-3]$');
+      allow create: if isOwner() && validPromotion();
+      allow list, update, delete: if false;
+    }
+
+    match /cct_work_receipts/{requestId} {
+      allow get: if isOwner() && requestId.matches('^promote-[0-9a-f]{32}-[0-3]$');
+      allow list, create, update, delete: if false;
+    }
+
+    match /cct_discovery_answers/{questionId} {
+      function validDiscoveryAnswer() {
+        let a = request.resource.data;
+        let fields = ['schemaVersion', 'ownerUid', 'questionId', 'text', 'createdAt'];
+        let host = get(/databases/$(database)/documents/cct_discovery/current).data;
+        let workspace = getAfter(/databases/$(database)/documents/cct_workspace/current).data;
+        return questionId.matches('^q-[0-9a-f]{32}$')
+          && a.keys().hasAll(fields) && a.keys().hasOnly(fields)
+          && a.schemaVersion == 'cct.discovery_answer.v1'
+          && a.ownerUid == request.auth.uid && a.questionId == questionId
+          && a.text is string && a.text.size() >= 1 && a.text.size() <= 4000
+          && a.text.matches('[\\s\\S]*[^\\s][\\s\\S]*')
+          && a.createdAt is timestamp && a.createdAt == request.time
+          && host.schemaVersion == 'cct.discovery.v1'
+          && host.ownerUid == request.auth.uid
+          && host.phase == 'AWAITING_INPUT' && host.executionEnabled == false
+          && host.question is map && host.question.id == questionId
+          && workspace.schemaVersion == 'cct.owner_workspace.v1'
+          && workspace.ownerUid == request.auth.uid && workspace.learningEnabled == true;
+      }
+      // Missing-document reads support the owner's transaction/readback flow.
+      allow get: if isOwner() && questionId.matches('^q-[0-9a-f]{32}$');
+      allow create: if isOwner() && validDiscoveryAnswer();
+      allow list, update, delete: if false;
+    }
+
+    // Bounded executor control is separate from legacy workspace permissions.
+    function validExecutorControl() {
+      let c = request.resource.data;
+      let fields = ['schemaVersion', 'ownerUid', 'revision', 'updatedAt', 'enabled',
+                    'runNonce', 'task', 'maxRuns', 'intervalSeconds'];
+      return c.keys().hasAll(fields) && c.keys().hasOnly(fields)
+        && c.schemaVersion == 'cct.executor_control.v1'
+        && c.ownerUid == request.auth.uid
+        && c.revision is int && c.revision >= 1 && c.revision <= 2147483647
+        && c.updatedAt is timestamp && c.updatedAt == request.time
+        && c.enabled is bool
+        && c.runNonce is string && c.runNonce.matches('^[A-Za-z0-9_-]{16,80}$')
+        && c.task in ['project-audit', 'public-docs-check']
+        && c.maxRuns is int && c.maxRuns >= 1 && c.maxRuns <= 3
+        && c.intervalSeconds is int && c.intervalSeconds >= 60 && c.intervalSeconds <= 3600;
+    }
+
+    function validExecutorTransition() {
+      let c = request.resource.data;
+      let previous = resource.data;
+      return previous.revision is int && c.revision == previous.revision + 1
+        // Every enabled write is a new activation, never a same-nonce refresh.
+        // The host additionally rejects nonces consumed in earlier activations.
+        && ((c.enabled == true && c.runNonce != previous.runNonce)
+          // OFF preserves nonce/policy and never depends on a runtime receipt.
+          || (c.enabled == false && c.diff(previous).affectedKeys()
+            .hasOnly(['revision', 'updatedAt', 'enabled'])));
+    }
+
+    match /cct_executor_control/current {
+      allow get: if isOwner();
+      // Bootstrap cannot execute work, even when the first UI write is retried.
+      allow create: if isOwner() && validExecutorControl()
+        && request.resource.data.revision == 1 && request.resource.data.enabled == false;
+      allow update: if isOwner() && validExecutorControl() && validExecutorTransition();
+      allow list, delete: if false;
+    }
+
+    match /cct_executor_runtime/current {
+      allow get: if isOwner();
+      allow list, create, update, delete: if false;
+    }
+
+    match /cct_executor_runs/{runId} {
+      allow get: if isOwner() && runId.matches('^run-[0-9a-f]{32}$');
+      // Rules are not filters: an unconstrained bounded list cannot prove an ID
+      // regex. The host alone writes this collection and validates receipt IDs.
+      allow list: if isOwner() && request.query.limit != null
+        && request.query.limit <= 20;
+      allow create, update, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

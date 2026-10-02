@@ -1,0 +1,23 @@
+[Unit]
+Description=CCTAE Firebase owner control bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=__VENV__/bin/cct-firebase-bridge --config __CONFIG__
+Environment=GOOGLE_APPLICATION_CREDENTIALS=__CREDENTIAL__
+Environment=PYTHONPATH=
+Restart=on-failure
+RestartSec=10
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=__CCT_STATE_DIR__ __RUNTIME_DIR__
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=default.target

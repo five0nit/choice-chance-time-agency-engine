@@ -31,6 +31,7 @@ from .planning import (
     PlanningDenied,
     StageHandoff,
 )
+from .principal import PrincipalModel
 from .public_actions import LocalFakePublicActionAdapter
 from .research import BoundedResearchAdapter
 from .store import EventStore, canonical_json
@@ -488,9 +489,18 @@ class SelfGoalEpisodeCoordinator:
         receipts: Sequence[SelfGoalInputReceipt],
         *,
         seed: int,
+        expected_principal_profile_digest: str | None = None,
     ) -> SelfGoalPreparation:
         """Authenticate inputs, choose genuine alternatives, and store one leased exact plan."""
 
+        if expected_principal_profile_digest is not None:
+            if not _DIGEST.fullmatch(expected_principal_profile_digest):
+                raise SelfGoalDenied("PRINCIPAL_PROFILE_DIGEST_INVALID")
+            if (
+                PrincipalModel(self.store).status().get("profile_digest")
+                != expected_principal_profile_digest
+            ):
+                raise SelfGoalDenied("PRINCIPAL_PROFILE_CHANGED")
         receipt_by_id = {receipt.id: receipt for receipt in receipts}
         receipt_events = self._record_receipts(receipts)
         candidate_events = self._register_candidates(receipt_events)
@@ -555,9 +565,22 @@ class SelfGoalEpisodeCoordinator:
             ),
         )
         try:
-            lease_receipt = CapabilityRegistry(self.store).grant(lease)
+            lease_receipt = CapabilityRegistry(self.store).grant(
+                lease,
+                expected_principal_profile_digest=expected_principal_profile_digest,
+            )
         except (KeyError, ValueError) as error:
             raise SelfGoalDenied("SELF_GOAL_LEASE_DENIED") from error
+        if expected_principal_profile_digest is not None and (
+            PrincipalModel(self.store).status().get("profile_digest")
+            != expected_principal_profile_digest
+        ):
+            CapabilityRegistry(self.store).revoke(
+                lease.id,
+                authority="host_adapter",
+                reason="Principal profile changed before self-goal adoption.",
+            )
+            raise SelfGoalDenied("PRINCIPAL_PROFILE_CHANGED")
         goal_id = f"goal-self-{selected.id}"
         proposed = LeasedSelfGoal(
             id=goal_id,
@@ -741,6 +764,7 @@ class SelfGoalEpisodeCoordinator:
             "outcome_event_id": episode.outcome_event_id,
             "reflection_event_id": episode.reflection_event_id,
             "status": episode.status,
+            "adapter_effects": len(episode.completed_stage_ids),
             "exact_scope": preparation.candidate.scope,
             "action_budget": preparation.candidate.max_actions,
             "byte_budget": preparation.candidate.max_bytes,

@@ -9,6 +9,7 @@ import pytest
 
 from cct_agent.autonomy import AutonomyEngine, Opportunity
 from cct_agent.kernel import AgencyKernel, NO_OP_ID, default_constitution
+from cct_agent.self_model import SelfModel
 from cct_agent.store import EventStore
 
 
@@ -136,6 +137,101 @@ def test_success_forms_hierarchy_executes_verifies_and_records_outcome(tmp_path)
     assert outcome is not None
     assert outcome.payload["decision_id"] == result["decision_id"]
     assert engine.store.verify_chain()["valid"] is True
+
+
+def test_verified_autonomy_run_predicts_and_resolves_competence_without_permission(
+    tmp_path,
+):
+    engine = make_engine(tmp_path)
+    engine.register_opportunity(
+        opportunity("self-model-bridge", write_plan("self-model.md", "verified"))
+    )
+    authority_events_before = [
+        event
+        for event in engine.store.events()
+        if event.kind.startswith("capability.")
+    ]
+
+    result = engine.run_once(seed=0, run_id="self-model-bridge-run")
+    snapshot = SelfModel(
+        engine.store, identity=engine.kernel.constitution.identity
+    ).snapshot()
+
+    assert result["success"] is True
+    assert snapshot["prediction_count"] == 1
+    assert snapshot["resolved_prediction_count"] == 1
+    assert snapshot["mean_brier_error"] == pytest.approx(0.25)
+    capability = snapshot["capabilities"]["local_workspace_write"]
+    assert capability["available"] is True
+    assert capability["permission"] == "competence_estimate_only_no_effect_authority"
+    assert capability["receipt_projection"] == {
+        "samples": 1,
+        "verified_successes": 1,
+        "failures": 0,
+        "success_rate": 1.0,
+    }
+    resolution = engine.store.latest("self.prediction.resolved")
+    assert resolution is not None
+    assert resolution.payload["effect_authority_granted"] is False
+    assert resolution.payload["permission_changed"] is False
+    assert [
+        event
+        for event in engine.store.events()
+        if event.kind.startswith("capability.")
+    ] == authority_events_before
+
+    event_counts = {
+        kind: len(engine.store.events(kind))
+        for kind in (
+            "self.capability.updated",
+            "self.prediction.made",
+            "self.prediction.resolved",
+        )
+    }
+    replay = engine.run_once(seed=999, run_id="self-model-bridge-run")
+    assert replay["idempotent"] is True
+    assert {
+        kind: len(engine.store.events(kind)) for kind in event_counts
+    } == event_counts
+
+
+def test_self_model_resolution_uses_pre_attempt_prior_not_post_outcome_projection(
+    tmp_path,
+):
+    engine = make_engine(tmp_path)
+    engine.store.append(
+        "autonomy.run.completed",
+        {
+            "run_id": "legacy-prior-success",
+            "capability": "legacy_bridge_capability",
+            "success": True,
+            "verified": True,
+            "receipt_count": 1,
+            "recovered_steps": 0,
+        },
+    )
+    before = SelfModel(
+        engine.store, identity=engine.kernel.constitution.identity
+    ).snapshot()["capabilities"]["legacy_bridge_capability"]["confidence"]
+    assert before == pytest.approx(2 / 3)
+    engine.register_opportunity(
+        opportunity(
+            "legacy-prior-next",
+            write_plan("legacy-next.md", "verified"),
+            capability="legacy_bridge_capability",
+        )
+    )
+
+    result = engine.run_once(seed=0, run_id="legacy-prior-next-run")
+    prediction = engine.store.latest("self.prediction.made")
+    resolution = engine.store.latest("self.prediction.resolved")
+
+    assert result["success"] is True
+    assert prediction is not None
+    assert resolution is not None
+    assert prediction.payload["prior_confidence"] == pytest.approx(before)
+    assert resolution.payload["previous_confidence"] == pytest.approx(before)
+    assert resolution.payload["corrected_confidence"] == pytest.approx(0.75)
 
 
 def test_controlled_failure_takes_fallback_and_records_replan(tmp_path):

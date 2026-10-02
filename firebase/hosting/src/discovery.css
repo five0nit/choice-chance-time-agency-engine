@@ -1,0 +1,86 @@
+/* A continuous conversation, with its evidence one tab away. */
+.conversation-shell { display: block; }
+.conversation-shell main { max-width: 960px; margin: auto; }
+.conversation-shell .workspace-body { padding: 12px 40px 28px; }
+.conversation-shell .topbar { min-height: 72px; padding: 16px 40px; border-bottom: 1px solid var(--line); }
+.conversation-shell .topbar-path { font-size: .83rem; }
+.conversation-shell .identity { display: none; }
+.discovery-shell { scroll-margin-top: 20px; }
+.discovery-nav { display: flex; align-items: center; justify-content: space-between; gap: 15px; border-bottom: 1px solid var(--line); margin-bottom: 32px; }
+.discovery-tabs { display: flex; gap: 26px; }
+.discovery-tabs button { min-height: 54px; padding: 12px 0; background: transparent; border: 0; border-bottom: 2px solid transparent; color: var(--muted); font-size: .9rem; cursor: pointer; }
+.discovery-tabs button[aria-selected="true"] { color: var(--green); border-bottom-color: var(--green); }
+.discovery-intro { margin: 0 0 25px; }
+.discovery-intro > .section-kicker { font-size: .57rem; color: var(--muted); margin-bottom: 14px; }
+.discovery-intro h1 { margin: 0; font-size: clamp(2rem, 4vw, 3rem); font-weight: 500; line-height: 1.06; letter-spacing: -.035em; }
+.discovery-intro > p:not(.section-kicker) { color: var(--muted); font-size: .9rem; line-height: 1.7; margin: 18px 0 0; }
+.discovery-status { color: var(--muted); font-size: .78rem; line-height: 1.5; margin: 18px 0 13px; }
+.discovery-status[data-state="attention"] { color: var(--amber); }
+.discovery-question-card { padding: 25px; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 10px; }
+.discovery-question-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.discovery-question-heading strong { color: var(--green); font-size: .8rem; font-weight: 500; }
+.discovery-question-heading span { color: var(--muted); font-size: .66rem; }
+.discovery-question-card h2 { margin: 20px 0 24px; font-size: clamp(1.12rem, 2vw, 1.35rem); font-weight: 400; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; text-wrap: pretty; }
+#discovery-form { display: grid; gap: 10px; }
+#discovery-form label { color: var(--muted); font-size: .75rem; }
+#discovery-input { display: block; width: 100%; min-height: 134px; resize: vertical; border: 1px solid var(--line-strong); border-radius: 6px; padding: 15px; background: var(--bg); color: var(--text); font: inherit; font-size: 1rem; line-height: 1.6; }
+#discovery-submit, #discovery-resume { min-height: 46px; border-radius: 6px; padding-inline: 30px; justify-self: start; }
+.discovery-feedback { color: var(--muted); font-size: .75rem; line-height: 1.6; }
+.discovery-feedback:empty { display: none; }
+.discovery-reason { color: var(--amber); font-size: .85rem; }
+.discovery-saved-reply { padding-left: 16px; border-left: 2px solid var(--green); white-space: pre-wrap; overflow-wrap: anywhere; font-size: .92rem; }
+.discovery-next-note { margin: 18px 0 26px; }
+.discovery-next-note p { color: var(--muted); font-size: .79rem; line-height: 1.7; max-width: 680px; }
+.discovery-next-note strong { font-weight: 400; color: var(--text); }
+.discovery-history, .discovery-connection, .context-settings { border-top: 1px solid var(--line); margin-top: 12px; }
+.discovery-history > summary, .discovery-connection > summary, .context-settings > summary { min-height: 53px; display: flex; align-items: center; color: var(--muted); font-size: .8rem; cursor: pointer; }
+.discovery-history > summary::after, .discovery-connection > summary::after, .context-settings > summary::after { content: '+'; margin-left: auto; }
+.discovery-history[open] > summary::after, .discovery-connection[open] > summary::after, .context-settings[open] > summary::after { content: '−'; }
+.discovery-history-turn { padding: 18px 0; border-top: 1px solid var(--line); }
+.discovery-history-turn h3 { font-size: .9rem; line-height: 1.6; font-weight: 500; }
+.discovery-history-turn p { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--muted); font-size: .88rem; border-left: 2px solid var(--line-strong); padding-left: 15px; }
+.discovery-learning-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 25px; margin: 25px 0 32px; }
+.discovery-learning-group { min-width: 0; }
+.discovery-learning-group > h3 { font-size: 1rem; margin: 0 0 14px; font-weight: 500; }
+.discovery-fact { background: var(--surface); border-left: 2px solid #6f8250; padding: 14px 16px; margin-top: 10px; }
+.discovery-fact > p { margin: 0; font-size: .87rem; line-height: 1.6; overflow-wrap: anywhere; }
+.discovery-evidence { margin-top: 10px; }
+.discovery-evidence > summary { color: var(--green); font-size: .71rem; cursor: pointer; }
+.discovery-evidence blockquote { margin: 12px 0 0; padding: 10px 0 0; border-top: 1px solid var(--line); }
+.discovery-evidence blockquote small { color: var(--muted); font-size: .69rem; }
+.discovery-evidence blockquote p { margin: 8px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .8rem; line-height: 1.6; }
+.discovery-empty { color: var(--muted); font-size: .82rem; line-height: 1.6; }
+.discovery-inside-section { margin: 28px 0; padding-top: 24px; border-top: 1px solid var(--line); }
+.discovery-inside-section h2 { font-size: 1.35rem; font-weight: 500; }
+.discovery-inside-section li { color: var(--muted); font-size: .87rem; line-height: 1.6; margin: 10px 0; }
+.discovery-help { color: var(--muted); font-size: .8rem; }
+.discovery-work-idea { border: 1px solid var(--line-strong); padding: 22px; margin-top: 15px; border-radius: 6px; }
+.discovery-work-idea h3 { font-size: 1.12rem; font-weight: 500; margin: 12px 0; }
+.discovery-work-idea p { font-size: .87rem; line-height: 1.6; }
+.discovery-promote { min-height: 44px; padding: 10px 18px; border-radius: 6px; margin-top: 8px; }
+.discovery-promote:disabled { cursor: not-allowed; opacity: .65; }
+.discovery-work-idea .discovery-status { font-size: .78rem; margin-bottom: 0; overflow-wrap: anywhere; }
+.discovery-work-queue { padding-left: 22px; overflow-wrap: anywhere; }
+.discovery-draft { color: var(--amber); font: .61rem ui-monospace, monospace; letter-spacing: .06em; }
+.discovery-first-step { color: var(--muted); }
+.discovery-execution { margin: 30px 0; padding: 22px; border: 1px solid #5a503b; background: #211f18; }
+.discovery-execution h2 { font-size: 1.35rem; font-weight: 500; margin: 13px 0; line-height: 1.3; }
+.discovery-execution p { color: var(--muted); font-size: .82rem; line-height: 1.65; }
+.discovery-execution blockquote { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .8rem; line-height: 1.6; }
+.context-settings { scroll-margin-top: 20px; }
+.context-settings .workspace-columns, .context-settings .decision-grid { grid-template-columns: minmax(0, 1fr); }
+.context-settings #owner-conversation > summary { min-height: 45px; cursor: pointer; font-size: .83rem; }
+.context-settings .owner-message { margin: 12px 0; }
+.conversation-shell footer { margin-top: 18px; color: var(--muted); font-size: .62rem; }
+@media (max-width: 600px) {
+  .conversation-shell .workspace-body { padding: 8px 18px 20px; }
+  .conversation-shell .topbar { padding: 12px 18px; min-height: 62px; }
+  .discovery-nav { margin-bottom: 26px; }
+  .discovery-intro > p:not(.section-kicker) { font-size: .85rem; }
+  .discovery-intro > p:not(.section-kicker) br { display: none; }
+  .discovery-question-card { padding: 18px; }
+  .discovery-question-card h2 { font-size: 1.1rem; margin: 17px 0 22px; }
+  #discovery-input { min-height: 128px; }
+  #discovery-submit { width: 100%; }
+  .discovery-learning-grid { grid-template-columns: minmax(0, 1fr); gap: 24px; }
+}

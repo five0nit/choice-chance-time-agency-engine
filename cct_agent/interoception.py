@@ -29,6 +29,9 @@ class InteroceptiveState:
         *,
         logical_tick: int,
     ) -> dict[str, Any]:
+        unknown = set(signals) - self.KNOWN_SIGNALS
+        if unknown:
+            raise ValueError("unknown interoceptive signals")
         normalized: dict[str, float] = {}
         for name, value in signals.items():
             if not name.strip():

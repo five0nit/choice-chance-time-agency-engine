@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from hashlib import sha256
 from math import isfinite
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 from .store import EventStore, canonical_json
 
@@ -135,17 +135,39 @@ class GlobalWorkspace:
         *,
         logical_tick: int,
         lesion: bool = False,
+        attention_policy: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         if logical_tick < 1:
             raise ValueError("logical_tick must be positive")
+        policy = dict(
+            attention_policy
+            or {
+                "version": "attention-regulation-v1",
+                "base_capacity": self.capacity,
+                "effective_capacity": self.capacity,
+                "base_char_budget": self.char_budget,
+                "effective_char_budget": self.char_budget,
+                "weights": {},
+                "signals": {},
+                "regulatory_event_id": None,
+                "signals_are_control_variables_not_claimed_feelings": True,
+            }
+        )
+        canonical_json(policy)
+        effective_capacity = min(
+            self.capacity, max(1, int(policy["effective_capacity"]))
+        )
+        effective_char_budget = min(
+            self.char_budget, max(32, int(policy["effective_char_budget"]))
+        )
         selected: list[AttendedItem] = []
         char_count = 0
         if not lesion:
             for candidate in attended:
-                if len(selected) >= self.capacity:
+                if len(selected) >= effective_capacity:
                     break
                 size = len(candidate.item.summary)
-                if char_count + size > self.char_budget:
+                if char_count + size > effective_char_budget:
                     continue
                 selected.append(candidate)
                 char_count += size
@@ -155,6 +177,7 @@ class GlobalWorkspace:
             "items": items,
             "capacity": self.capacity,
             "char_budget": self.char_budget,
+            "attention_policy": policy,
             "lesion": lesion,
         }
         state_hash = sha256(canonical_json(state_material).encode("utf-8")).hexdigest()
