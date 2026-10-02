@@ -10,7 +10,8 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-22.04
+    # The sandbox pins /usr/bin/python3; 24.04 supplies Python 3.12.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -24,8 +25,8 @@ jobs:
           cache: pip
       - uses: astral-sh/setup-uv@v6
       - name: Build checksum-pinned sandbox prerequisite
-        # Jammy's packaged Bubblewrap lacks --disable-userns. Keep that
-        # security boundary; install a compatible binary only on this runner.
+        # Pin compatible sandbox behavior across runner image revisions;
+        # keep the required user-namespace security boundary.
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential meson ninja-build pkg-config libcap-dev
@@ -35,8 +36,9 @@ jobs:
           meson setup "$RUNNER_TEMP/bwrap-build" "$RUNNER_TEMP/bubblewrap-0.11.0" --prefix /usr -Dman=disabled -Dtests=false -Dselinux=disabled -Dbash_completion=disabled -Dzsh_completion=disabled
           meson compile -C "$RUNNER_TEMP/bwrap-build"
           sudo meson install -C "$RUNNER_TEMP/bwrap-build"
-      - name: Verify required sandbox option
+      - name: Verify pinned sandbox binaries and Python standard library
         run: |
+          /usr/bin/python3 -c "import sys,tomllib; print(sys.version); assert sys.version_info >= (3,11)"
           bwrap --version
           python -c "import subprocess; from cct_agent.owner_delivery_local import _host_binary, BWRAP, PRLIMIT, PYTHON; print([str(_host_binary(p)) for p in (BWRAP, PRLIMIT, PYTHON)]); assert '--disable-userns' in subprocess.check_output([str(BWRAP),'--help'],text=True)"
       - name: Install project and QA tools
